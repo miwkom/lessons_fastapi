@@ -1,44 +1,44 @@
 from typing import Optional
 
 from fastapi import Query, APIRouter, Body
+from sqlalchemy import insert, select
 
+from src.DB import async_session_maker, engine
 from src.api.dependencies import PaginationDep
+from src.models.hotels import HotelsModel
 from src.schemas.hotels import Hotel, HotelPATCH
 
 router = APIRouter(prefix="/hotels", tags=["Отели"])
 
-hotels = [
-    {"id": 1, "title": "Сочи", "name": "sochi"},
-    {"id": 2, "title": "Москва", "name": "moscow"},
-    {"id": 3, "title": "Ростов-на-Дону", "name": "rostov"},
-    {"id": 4, "title": "Калининград", "name": "kaliningrad"},
-    {"id": 5, "title": "Санкт-Петербург", "name": "spb"},
-    {"id": 6, "title": "Казань", "name": "kazan"},
-    {"id": 7, "title": "Краснодар", "name": "krasnodar"},
-    {"id": 8, "title": "Новосибирск", "name": "novosibirsk"},
-    {"id": 9, "title": "Екатеринбург", "name": "ekaterinburg"},
-    {"id": 10, "title": "Нижний Новгород", "name": "nn"},
-]
-
 
 @router.get("", summary="Список отелей")
-def get_hotels(
+async def get_hotels(
         pagination: PaginationDep,
-        id: Optional[int] = Query(None, description="ID"),
-        title: Optional[str] = Query(None, description="Город"),
+        title: Optional[str] = Query(None, description="Название"),
+        location: Optional[str] = Query(None, description="Адрес"),
 
 ):
-    filtered_hotels = []
-    for hotel in hotels:
-        if id and hotel["id"] != id:
-            continue
-        if title and hotel["title"] != title:
-            continue
-        filtered_hotels.append(hotel)
+    per_page = pagination.per_page or 5
+    async with (async_session_maker() as session):
 
-    if pagination.page and pagination.per_page:
-        return filtered_hotels[(pagination.page - 1) * pagination.per_page:][:pagination.per_page]
-    return filtered_hotels
+        query = select(HotelsModel)
+        if title:
+            query = query.filter(HotelsModel.title.like(f"%{title}%"))
+        if location:
+            query = query.filter(HotelsModel.location.like(f"%{location}%"))
+        query = (
+            query
+            .limit(per_page)
+            .offset(per_page * (pagination.page - 1))
+        )
+
+        result = await session.execute(query)
+
+        hotels = result.scalars().all()
+        # print(type(hotels), hotels)
+        return hotels
+    # if pagination.page and pagination.per_page:
+    #     return filtered_hotels[(pagination.page - 1) * pagination.per_page:][:pagination.per_page]
 
 
 @router.delete("/{hotel_id}", summary="Удалить отель")
@@ -49,18 +49,33 @@ def delete_hotel(hotel_id: int):
 
 
 @router.post("", summary="Создать отель")
-def create_hotel(hotel_data: Hotel = Body(openapi_examples={
-    "1": {"summary": "Пример 1", "value": {"title": "Сочи", "name": "Отель_пример_1"}},
-    "2": {"summary": "Пример 2", "value": {"title": "Анапа", "name": "Отель_пример_2"}},
-    "3": {"summary": "Пример 3", "value": {"title": "Сочи", "name": "Отель_пример_3"}},
-    "4": {"summary": "Пример 4", "value": {"title": "Анапа", "name": "Отель_пример_4"}},
+async def create_hotel(hotel_data: Hotel = Body(openapi_examples={
+    "1": {"summary": "Rich",
+          "value": {
+              "title": "Rich",
+              "location": "Москва, ул.Дыбенка, 10"}
+          },
+    "2": {"summary": "Lux",
+          "value": {
+              "title": "Lux",
+              "location": "Санкт-Петербург, ул.Речная, 25"}
+          },
+    "3": {"summary": "Motel 5 star",
+          "value": {
+              "title": "Motel 5 star",
+              "location": "Сочи, ул.Солнечная, 1"}
+          },
+    "4": {"summary": "Novatel",
+          "value": {
+              "title": "Novatel",
+              "location": "Москва, ул.Строителей, 12"}
+          },
 })):
-    global hotels
-    hotels.append({
-        "id": hotels[-1]["id"] + 1,
-        "title": hotel_data.title,
-        "name": hotel_data.name,
-    })
+    async with async_session_maker() as session:
+        add_hotel_stmt = insert(HotelsModel).values(**hotel_data.model_dump())
+        # print(add_hotel_stmt.compile(engine, compile_kwargs={"literal_binds": True}))
+        await session.execute(add_hotel_stmt)
+        await session.commit()
     return {"status": "OK"}
 
 

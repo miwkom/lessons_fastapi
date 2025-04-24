@@ -7,9 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from src.api.hotels import router as hotel_router
-from src.config import settings
 
-print(f'{settings.DB_NAME}')
 app = FastAPI()
 
 app.include_router(hotel_router)
