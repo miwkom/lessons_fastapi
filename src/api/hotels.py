@@ -1,11 +1,10 @@
 from typing import Optional
 
 from fastapi import Query, APIRouter, Body
-from sqlalchemy import insert, select
 
-from src.DB import async_session_maker, engine
+from src.DB import async_session_maker
 from src.api.dependencies import PaginationDep
-from src.models.hotels import HotelsModel
+from src.repositories.hotels import HotelsRepository
 from src.schemas.hotels import Hotel, HotelPATCH
 
 router = APIRouter(prefix="/hotels", tags=["Отели"])
@@ -19,26 +18,13 @@ async def get_hotels(
 
 ):
     per_page = pagination.per_page or 5
-    async with (async_session_maker() as session):
-
-        query = select(HotelsModel)
-        if title:
-            query = query.filter(HotelsModel.title.like(f"%{title}%"))
-        if location:
-            query = query.filter(HotelsModel.location.like(f"%{location}%"))
-        query = (
-            query
-            .limit(per_page)
-            .offset(per_page * (pagination.page - 1))
+    async with async_session_maker() as session:
+        return await HotelsRepository(session).get_all(
+            title=title,
+            location=location,
+            limit=per_page,
+            offset=per_page * (pagination.page - 1)
         )
-
-        result = await session.execute(query)
-
-        hotels = result.scalars().all()
-        # print(type(hotels), hotels)
-        return hotels
-    # if pagination.page and pagination.per_page:
-    #     return filtered_hotels[(pagination.page - 1) * pagination.per_page:][:pagination.per_page]
 
 
 @router.delete("/{hotel_id}", summary="Удалить отель")
@@ -72,11 +58,9 @@ async def create_hotel(hotel_data: Hotel = Body(openapi_examples={
           },
 })):
     async with async_session_maker() as session:
-        add_hotel_stmt = insert(HotelsModel).values(**hotel_data.model_dump())
-        # print(add_hotel_stmt.compile(engine, compile_kwargs={"literal_binds": True}))
-        await session.execute(add_hotel_stmt)
+        hotel = await HotelsRepository(session).add(hotel_data.model_dump())
         await session.commit()
-    return {"status": "OK"}
+    return {"status": "OK", "data": hotel}
 
 
 @router.put("/{hotel_id}", summary="Изменить отель")
