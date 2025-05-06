@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 
 import jwt
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from passlib.context import CryptContext
 
 from src.config import settings
@@ -28,3 +28,6 @@ class AuthService:
             return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
         except jwt.exceptions.DecodeError:
             raise HTTPException(status_code=404, detail="Неверный токен")
+
+    def logout_user(self, response: Response):
+        response.delete_cookie("access_token")

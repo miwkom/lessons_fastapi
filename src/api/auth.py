@@ -28,7 +28,7 @@ async def register_user(
 @router.post('/login')
 async def login_user(
         data: UserLogin,
-        response: Response
+        response: Response,
 ):
     async with async_session_maker() as session:
         try:
@@ -44,8 +44,16 @@ async def login_user(
 
 @router.get('/me')
 async def get_me(
-        user_id: UserIdDep
+        user_id: UserIdDep,
 ):
     async with async_session_maker() as session:
         user = await UsersRepository(session).get_one_or_none(id=user_id)
     return user
+
+
+@router.get('/logout')
+async def logout(
+        response: Response,
+):
+    AuthService().logout_user(response)
+    return {"status": "OK"}
