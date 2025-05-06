@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Response, Request
+from fastapi import APIRouter, HTTPException, Response
 
 from src.DB import async_session_maker
+from src.api.dependencies import UserIdDep
 from src.repositories.users import UsersRepository
 from src.schemas.users import UserRequestAdd, UserAdd, UserLogin
 from src.services.auth import AuthService
@@ -41,9 +42,10 @@ async def login_user(
         return {"access_token": access_token}
 
 
-@router.get('/verify_cookie')
-async def verify_cookie(
-        request: Request
+@router.get('/me')
+async def get_me(
+        user_id: UserIdDep
 ):
-    cookie = request.cookies.get("access_token")
-    return {"cookie": f"{cookie or None}"}
+    async with async_session_maker() as session:
+        user = await UsersRepository(session).get_one_or_none(id=user_id)
+    return user
