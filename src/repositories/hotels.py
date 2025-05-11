@@ -9,7 +9,7 @@ class HotelsRepository(BaseRepository):
     model = HotelsModel
     schema = Hotel
 
-    async def get_all1(
+    async def get_all(
             self,
             location,
             title,
