@@ -38,11 +38,24 @@ class HotelsRepository(BaseRepository):
             self,
             date_from: date,
             date_to: date,
+            location,
+            title,
+            limit,
+            offset,
     ):
         rooms_ids_to_get = rooms_ids_for_booking(date_from=date_from, date_to=date_to)
         hotels_ids = (
             select(RoomsModel.hotel_id)
             .select_from(RoomsModel)
             .filter(RoomsModel.id.in_(rooms_ids_to_get))
+        )
+        if title:
+            hotels_ids = hotels_ids.filter(HotelsModel.title.ilike(f"%{title}%"))
+        if location:
+            hotels_ids = hotels_ids.filter(HotelsModel.location.ilike(f"%{location}%"))
+        hotels_ids = (
+            hotels_ids
+            .limit(limit)
+            .offset(offset)
         )
         return await self.get_filtered(HotelsModel.id.in_(hotels_ids))
