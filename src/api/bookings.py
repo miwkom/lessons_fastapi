@@ -16,24 +16,24 @@ async def create_booking(
                 "summary": "Пример 1",
                 "value": {
                     "room_id": "1",
-                    "date_from": "2000-05-25",
-                    "date_to": "2000-06-25",
+                    "date_from": "2025-01-25",
+                    "date_to": "2025-02-25",
                 }
             },
             "2": {
                 "summary": "Пример 2",
                 "value": {
                     "room_id": "1",
-                    "date_from": "2015-05-25",
-                    "date_to": "2016-05-25",
+                    "date_from": "2025-03-25",
+                    "date_to": "2025-04-25",
                 }
             },
             "3": {
                 "summary": "Пример 3",
                 "value": {
                     "room_id": "1",
-                    "date_from": "2000-05-25",
-                    "date_to": "2013-08-25",
+                    "date_from": "2025-05-25",
+                    "date_to": "2025-06-25",
                 }
             }
         }),
