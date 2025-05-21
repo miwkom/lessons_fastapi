@@ -1,22 +1,20 @@
 from fastapi import APIRouter, Body
 
 from src.api.dependencies import DBDep
-from src.schemas.facilities import FacilitiesAdd
+from src.schemas.facilities import FacilityAdd
 
 router = APIRouter(prefix="/facilities", tags=["Удобства и услуги"])
 
 
 @router.get("", summary="Список удобств и услуг")
-async def get_facilities(
-        db: DBDep
-):
+async def get_facilities(db: DBDep):
     return await db.facilities.get_all()
 
 
 @router.post("", summary="Создать удобство или услугу")
-async def create_hotel(
+async def create_facility(
         db: DBDep,
-        facilities_data: FacilitiesAdd = Body(openapi_examples={
+        facilities_data: FacilityAdd = Body(openapi_examples={
             "1": {"summary": "Wifi",
                   "value": {
                       "title": "Wifi"}
@@ -41,7 +39,7 @@ async def create_hotel(
 
 
 @router.delete("/{facilities_id}", summary="Удалить удобство или услугу")
-async def delete_hotel(
+async def delete_facility(
         db: DBDep,
         facilities_id: int
 ):

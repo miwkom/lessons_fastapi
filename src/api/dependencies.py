@@ -2,7 +2,6 @@ from typing import Annotated, Optional
 
 from fastapi import Query, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy.orm import sessionmaker
 
 from src.DB import async_session_maker
 from src.services.auth import AuthService
