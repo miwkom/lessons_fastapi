@@ -14,7 +14,7 @@ class RoomsModel(BaseModel):
     price: Mapped[int]
     quantity: Mapped[int]
 
-    facilities: Mapped[list["FacilityModel"]] = relationship(
-        baack_populates="rooms",
+    facilities: Mapped[list["FacilitiesModel"]] = relationship(
+        back_populates="rooms",
         secondary="rooms_facilities",
     )
