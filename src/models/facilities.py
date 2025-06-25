@@ -1,10 +1,10 @@
 from sqlalchemy import String, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.DB import BaseModel
+from src.DB import Base
 
 
-class FacilitiesModel(BaseModel):
+class FacilitiesModel(Base):
     __tablename__ = 'facilities'
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -16,7 +16,7 @@ class FacilitiesModel(BaseModel):
     )
 
 
-class RoomsFacilitiesModel(BaseModel):
+class RoomsFacilitiesModel(Base):
     __tablename__ = 'rooms_facilities'
 
     id: Mapped[int] = mapped_column(primary_key=True)

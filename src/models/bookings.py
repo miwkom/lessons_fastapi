@@ -4,10 +4,10 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.DB import BaseModel
+from src.DB import Base
 
 
-class BookingsModel(BaseModel):
+class BookingsModel(Base):
     __tablename__ = "bookings"
 
     id: Mapped[int] = mapped_column(primary_key=True)

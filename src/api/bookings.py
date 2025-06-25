@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Body, HTTPException
+from fastapi_cache.decorator import cache
 from sqlalchemy.exc import NoResultFound
 
 from src.api.dependencies import DBDep, UserIdDep
@@ -58,6 +59,7 @@ async def create_booking(
 
 
 @router.get("/bookings", summary="Список бронирования")
+@cache(expire=60)
 async def get_bookings(
         db: DBDep,
 ):
@@ -65,6 +67,7 @@ async def get_bookings(
 
 
 @router.get("/bookings/me", summary="Бронирование пользователя")
+@cache(expire=60)
 async def get_booking(
         db: DBDep,
         user_id: UserIdDep,

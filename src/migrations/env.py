@@ -5,7 +5,7 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from src.DB import BaseModel
+from src.DB import Base
 from src.config import settings
 from src.models.hotels import HotelsModel
 from src.models.rooms import RoomsModel
@@ -27,7 +27,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = BaseModel.metadata
+target_metadata = Base.metadata
 
 
 # other values from the config, defined by the needs of env.py,
