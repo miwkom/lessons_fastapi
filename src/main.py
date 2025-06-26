@@ -2,13 +2,12 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent.parent))
-
 import uvicorn
 from fastapi import FastAPI
-
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
+
+sys.path.append(str(Path(__file__).parent.parent))
 
 from src.api.hotels import router as hotel_router
 from src.api.auth import router as auth_router
