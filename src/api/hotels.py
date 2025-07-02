@@ -17,8 +17,8 @@ async def get_hotels(
         pagination: PaginationDep,
         title: Optional[str] = Query(None, description="Название"),
         location: Optional[str] = Query(None, description="Адрес"),
-        date_from: date = Query(example="2025-01-27"),
-        date_to: date = Query(example="2025-03-27"),
+        date_from: date = Query(examples="2025-01-27"),
+        date_to: date = Query(examples="2025-03-27"),
 
 ):
     per_page = pagination.per_page or 5
@@ -48,7 +48,7 @@ async def create_hotel(
             "1": {"summary": "Rich",
                   "value": {
                       "title": "Rich",
-                      "location": "Москва, ул.Дыбенка, 10"}
+                      "location": "Москва, ул.Дыбенко, 10"}
                   },
             "2": {"summary": "Lux",
                   "value": {
