@@ -1,0 +1,2085 @@
+Index: _helper/sync_async.py
+===================================================================
+diff --git a/_helper/sync_async.py b/_helper/sync_async.py
+deleted file mode 100644
+--- a/_helper/sync_async.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ /dev/null	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
+@@ -1,23 +0,0 @@
+-import asyncio
+-from fastapi import APIRouter
+-import time
+-
+-router = APIRouter(prefix="/test", tags=["Синхронное и асинхронный"])
+-
+-
+-@router.get("/sync/{id}")
+-def sync_func(id: int):
+-    start_time = time.time()
+-    print(f"sync. Начал {id}: {time.time():.2f}")
+-    time.sleep(3)
+-    end_time = time.time()
+-    print(f"sync. Закончил {id}: {time.time():.2f}, {end_time - start_time:.2f}")
+-
+-
+-@router.get("/async/{id}")
+-async def async_func(id: int):
+-    start_time = time.time()
+-    print(f"async. Начал {id}: {time.time():.2f}")
+-    await asyncio.sleep(3)
+-    end_time = time.time()
+-    print(f"аsync. Закончил {id}: {time.time():.2f}, {end_time - start_time:.2f}")
+Index: _helper/attack.py
+===================================================================
+diff --git a/_helper/attack.py b/_helper/attack.py
+deleted file mode 100644
+--- a/_helper/attack.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ /dev/null	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
+@@ -1,25 +0,0 @@
+-import asyncio
+-import time
+-import aiohttp
+-
+-
+-async def get_data(id: int, route: str):
+-    print(f"Начал выполнение {id}")
+-    url = f"http://127.0.0.1:8000/test/{route}/{id}"
+-    async with aiohttp.ClientSession() as session:
+-        async with session.get(url) as resp:
+-            print(f"Закончил выполнение {id}")
+-
+-
+-async def main():
+-    await asyncio.gather(
+-        *[get_data(i, "sync") for i in range(500)]
+-    )
+-
+-
+-if __name__ == "__main__":
+-    start_time = time.time()
+-    asyncio.run(main())
+-    end_time = time.time()
+-    total_time = end_time - start_time
+-    print(f'Общее время работы:{total_time:.2f}')
+Index: src/repositories/rooms.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from src.models.rooms import RoomsModel\r\nfrom src.repositories.base import BaseRepository\r\n\r\n\r\nclass RoomsRepository(BaseRepository):\r\n    model = RoomsModel\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/rooms.py b/src/repositories/rooms.py
+--- a/src/repositories/rooms.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/repositories/rooms.py	(date 1750896360466)
+@@ -1,6 +1,43 @@
++from datetime import date
++
++from sqlalchemy import select
++from sqlalchemy.orm import selectinload
++
+ from src.models.rooms import RoomsModel
+ from src.repositories.base import BaseRepository
++from src.repositories.mappers.mappers import RoomDataMapper, RoomDataWithRelationsMapper
++from src.repositories.utils import rooms_ids_for_booking
+ 
+ 
+ class RoomsRepository(BaseRepository):
+     model = RoomsModel
++    mapper = RoomDataMapper
++
++    async def get_filtered_by_time(
++            self,
++            hotel_id: int,
++            date_from: date,
++            date_to: date,
++    ):
++        rooms_ids_to_get = rooms_ids_for_booking(hotel_id=hotel_id, date_from=date_from, date_to=date_to)
++
++        query = (
++            select(self.model)
++            .options(selectinload(self.model.facilities))
++            .filter(RoomsModel.id.in_(rooms_ids_to_get))
++        )
++        result = await self.session.execute(query)
++        return [RoomDataWithRelationsMapper.map_to_domain_entity(model) for model in
++                result.scalars().all()]
++
++    async def get_room_or_none(self, **filter_by):
++        query = (
++            select(self.model)
++            .options(selectinload(self.model.facilities))
++            .filter_by(**filter_by)
++        )
++        result = await self.session.execute(query)
++        model = result.scalars().one_or_none()
++        if model is None:
++            return None
++        return RoomDataWithRelationsMapper.map_to_domain_entity(model)
+Index: src/api/hotels.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from typing import Optional\r\n\r\nfrom fastapi import Query, APIRouter, Body\r\n\r\nfrom src.DB import async_session_maker\r\nfrom src.api.dependencies import PaginationDep\r\nfrom src.repositories.hotels import HotelsRepository\r\nfrom src.schemas.hotels import Hotel, HotelPATCH\r\n\r\nrouter = APIRouter(prefix=\"/hotels\", tags=[\"Отели\"])\r\n\r\n\r\n@router.get(\"\", summary=\"Список отелей\")\r\nasync def get_hotels(\r\n        pagination: PaginationDep,\r\n        title: Optional[str] = Query(None, description=\"Название\"),\r\n        location: Optional[str] = Query(None, description=\"Адрес\"),\r\n\r\n):\r\n    per_page = pagination.per_page or 5\r\n    async with async_session_maker() as session:\r\n        return await HotelsRepository(session).get_all(\r\n            title=title,\r\n            location=location,\r\n            limit=per_page,\r\n            offset=per_page * (pagination.page - 1)\r\n        )\r\n\r\n\r\n@router.post(\"\", summary=\"Создать отель\")\r\nasync def create_hotel(hotel_data: Hotel = Body(openapi_examples={\r\n    \"1\": {\"summary\": \"Rich\",\r\n          \"value\": {\r\n              \"title\": \"Rich\",\r\n              \"location\": \"Москва, ул.Дыбенка, 10\"}\r\n          },\r\n    \"2\": {\"summary\": \"Lux\",\r\n          \"value\": {\r\n              \"title\": \"Lux\",\r\n              \"location\": \"Санкт-Петербург, ул.Речная, 25\"}\r\n          },\r\n    \"3\": {\"summary\": \"Motel 5 star\",\r\n          \"value\": {\r\n              \"title\": \"Motel 5 star\",\r\n              \"location\": \"Сочи, ул.Солнечная, 1\"}\r\n          },\r\n    \"4\": {\"summary\": \"Novatel\",\r\n          \"value\": {\r\n              \"title\": \"Novatel\",\r\n              \"location\": \"Москва, ул.Строителей, 12\"}\r\n          },\r\n})):\r\n    async with async_session_maker() as session:\r\n        hotel = await HotelsRepository(session).add(hotel_data)\r\n        await session.commit()\r\n    return {\"status\": \"OK\", \"data\": hotel}\r\n\r\n\r\n@router.put(\"/{hotel_id}\", summary=\"Изменить отель\")\r\nasync def edit_hotel(hotel_id: int, hotel_data: Hotel):\r\n    async with async_session_maker() as session:\r\n        await HotelsRepository(session).edit(id=hotel_id, data=hotel_data)\r\n        await session.commit()\r\n    return {\"status\": \"OK\"}\r\n\r\n\r\n@router.patch(\"/{hotel_id}\", summary=\"Частичное изменение\")\r\ndef patch_hotel(hotel_id: int, hotel_data: HotelPATCH):\r\n    pass\r\n    return {\"status\": \"OK\"}\r\n\r\n\r\n@router.delete(\"/{hotel_id}\", summary=\"Удалить отель\")\r\nasync def delete_hotel(hotel_id: int):\r\n    async with async_session_maker() as session:\r\n        await HotelsRepository(session).delete(id=hotel_id)\r\n        await session.commit()\r\n    return {\"status\": \"OK\"}\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/api/hotels.py b/src/api/hotels.py
+--- a/src/api/hotels.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/api/hotels.py	(date 1750896360471)
+@@ -1,78 +1,104 @@
++from datetime import date
+ from typing import Optional
+ 
+ from fastapi import Query, APIRouter, Body
++from fastapi_cache.decorator import cache
+ 
+-from src.DB import async_session_maker
+-from src.api.dependencies import PaginationDep
+-from src.repositories.hotels import HotelsRepository
+-from src.schemas.hotels import Hotel, HotelPATCH
++from src.api.dependencies import PaginationDep, DBDep
++from src.schemas.hotels import HotelPATCH, HotelAdd
+ 
+ router = APIRouter(prefix="/hotels", tags=["Отели"])
+ 
+ 
+ @router.get("", summary="Список отелей")
++@cache(expire=60)
+ async def get_hotels(
++        db: DBDep,
+         pagination: PaginationDep,
+         title: Optional[str] = Query(None, description="Название"),
+         location: Optional[str] = Query(None, description="Адрес"),
++        date_from: date = Query(example="2025-01-27"),
++        date_to: date = Query(example="2025-03-27"),
+ 
+ ):
+     per_page = pagination.per_page or 5
+-    async with async_session_maker() as session:
+-        return await HotelsRepository(session).get_all(
+-            title=title,
+-            location=location,
+-            limit=per_page,
+-            offset=per_page * (pagination.page - 1)
+-        )
++    return await db.hotels.get_filtered_by_time(
++        date_from=date_from,
++        date_to=date_to,
++        title=title,
++        location=location,
++        limit=per_page,
++        offset=per_page * (pagination.page - 1)
++    )
+ 
+ 
++@router.get("/{hotel_id}", summary="Получить отель")
++@cache(expire=60)
++async def get_hotel(
++        hotel_id: int,
++        db: DBDep
++):
++    return await db.hotels.get_one_or_none(id=hotel_id)
++
++
+ @router.post("", summary="Создать отель")
+-async def create_hotel(hotel_data: Hotel = Body(openapi_examples={
+-    "1": {"summary": "Rich",
+-          "value": {
+-              "title": "Rich",
+-              "location": "Москва, ул.Дыбенка, 10"}
+-          },
+-    "2": {"summary": "Lux",
+-          "value": {
+-              "title": "Lux",
+-              "location": "Санкт-Петербург, ул.Речная, 25"}
+-          },
+-    "3": {"summary": "Motel 5 star",
+-          "value": {
+-              "title": "Motel 5 star",
+-              "location": "Сочи, ул.Солнечная, 1"}
+-          },
+-    "4": {"summary": "Novatel",
+-          "value": {
+-              "title": "Novatel",
+-              "location": "Москва, ул.Строителей, 12"}
+-          },
+-})):
+-    async with async_session_maker() as session:
+-        hotel = await HotelsRepository(session).add(hotel_data)
+-        await session.commit()
++async def create_hotel(
++        db: DBDep,
++        hotel_data: HotelAdd = Body(openapi_examples={
++            "1": {"summary": "Rich",
++                  "value": {
++                      "title": "Rich",
++                      "location": "Москва, ул.Дыбенка, 10"}
++                  },
++            "2": {"summary": "Lux",
++                  "value": {
++                      "title": "Lux",
++                      "location": "Санкт-Петербург, ул.Речная, 25"}
++                  },
++            "3": {"summary": "Motel 5 star",
++                  "value": {
++                      "title": "Motel 5 star",
++                      "location": "Сочи, ул.Солнечная, 1"}
++                  },
++            "4": {"summary": "Novatel",
++                  "value": {
++                      "title": "Novatel",
++                      "location": "Москва, ул.Строителей, 12"}
++                  },
++        })
++):
++    hotel = await db.hotels.add(hotel_data)
++    await db.commit()
+     return {"status": "OK", "data": hotel}
+ 
+ 
+ @router.put("/{hotel_id}", summary="Изменить отель")
+-async def edit_hotel(hotel_id: int, hotel_data: Hotel):
+-    async with async_session_maker() as session:
+-        await HotelsRepository(session).edit(id=hotel_id, data=hotel_data)
+-        await session.commit()
++async def edit_hotel(
++        db: DBDep,
++        hotel_id: int,
++        hotel_data: HotelAdd
++):
++    await db.hotels.edit(hotel_data, id=hotel_id)
++    await db.commit()
+     return {"status": "OK"}
+ 
+ 
+ @router.patch("/{hotel_id}", summary="Частичное изменение")
+-def patch_hotel(hotel_id: int, hotel_data: HotelPATCH):
+-    pass
++async def patch_hotel(
++        db: DBDep,
++        hotel_id: int,
++        hotel_data: HotelPATCH
++):
++    await db.hotels.edit(hotel_data, id=hotel_id, exclude_unset=True)
++    await db.commit()
+     return {"status": "OK"}
+ 
+ 
+ @router.delete("/{hotel_id}", summary="Удалить отель")
+-async def delete_hotel(hotel_id: int):
+-    async with async_session_maker() as session:
+-        await HotelsRepository(session).delete(id=hotel_id)
+-        await session.commit()
++async def delete_hotel(
++        db: DBDep,
++        hotel_id: int
++):
++    await db.hotels.delete(id=hotel_id)
++    await db.commit()
+     return {"status": "OK"}
+Index: src/main.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import sys\r\nfrom pathlib import Path\r\n\r\nsys.path.append(str(Path(__file__).parent.parent))\r\n\r\nimport uvicorn\r\nfrom fastapi import FastAPI\r\n\r\nfrom src.api.hotels import router as hotel_router\r\n\r\napp = FastAPI()\r\n\r\napp.include_router(hotel_router)\r\n\r\nif __name__ == \"__main__\":\r\n    uvicorn.run(\"main:app\", host=\"127.0.0.1\", port=8000, reload=True)\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main.py b/src/main.py
+--- a/src/main.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/main.py	(date 1750896360457)
+@@ -1,4 +1,5 @@
+ import sys
++from contextlib import asynccontextmanager
+ from pathlib import Path
+ 
+ sys.path.append(str(Path(__file__).parent.parent))
+@@ -6,11 +7,39 @@
+ import uvicorn
+ from fastapi import FastAPI
+ 
++from fastapi_cache import FastAPICache
++from fastapi_cache.backends.redis import RedisBackend
++
+ from src.api.hotels import router as hotel_router
++from src.api.auth import router as auth_router
++from src.api.rooms import router as rooms_router
++from src.api.bookings import router as bookings_router
++from src.api.facilities import router as facilities_router
++from src.api.images import router as images_router
++from src.init import redis_connector
++
++
++@asynccontextmanager
++async def lifespan(app: FastAPI):
++    # Старт
++    await redis_connector.connect()
++
++    FastAPICache.init(RedisBackend(redis_connector.redis), prefix="fastapi-cache")
++    print('Redis connection')
++    yield
++    # Выключение/Перезапуск
++    await redis_connector.disconnect()
++    print('Redis disconnection')
+ 
+-app = FastAPI()
+ 
++app = FastAPI(lifespan=lifespan)
++
++app.include_router(auth_router)
+ app.include_router(hotel_router)
++app.include_router(rooms_router)
++app.include_router(facilities_router)
++app.include_router(bookings_router)
++app.include_router(images_router)
+ 
+ if __name__ == "__main__":
+     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+Index: src/models/rooms.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from sqlalchemy import ForeignKey\r\nfrom sqlalchemy.orm import Mapped, mapped_column\r\n\r\nfrom src.DB import BaseModel\r\n\r\n\r\nclass RoomsModel(BaseModel):\r\n    __tablename__ = \"rooms\"\r\n\r\n    id: Mapped[int] = mapped_column(primary_key=True)\r\n    hotel_id: Mapped[int] = mapped_column(ForeignKey(\"hotels.id\"))\r\n    title: Mapped[str]\r\n    description: Mapped[str | None]\r\n    price: Mapped[int]\r\n    quantity: Mapped[int]\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/models/rooms.py b/src/models/rooms.py
+--- a/src/models/rooms.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/models/rooms.py	(date 1750896360476)
+@@ -1,10 +1,10 @@
+ from sqlalchemy import ForeignKey
+-from sqlalchemy.orm import Mapped, mapped_column
++from sqlalchemy.orm import Mapped, mapped_column, relationship
+ 
+-from src.DB import BaseModel
++from src.DB import Base
+ 
+ 
+-class RoomsModel(BaseModel):
++class RoomsModel(Base):
+     __tablename__ = "rooms"
+ 
+     id: Mapped[int] = mapped_column(primary_key=True)
+@@ -13,3 +13,8 @@
+     description: Mapped[str | None]
+     price: Mapped[int]
+     quantity: Mapped[int]
++
++    facilities: Mapped[list["FacilitiesModel"]] = relationship(
++        back_populates="rooms",
++        secondary="rooms_facilities",
++    )
+Index: src/api/dependencies.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from typing import Annotated, Optional\r\n\r\nfrom fastapi import Query, Depends\r\nfrom pydantic import BaseModel\r\n\r\n\r\nclass PaginationParams(BaseModel):\r\n    page: Annotated[Optional[int], Query(1, description=\"Номер страницы\", ge=1)]\r\n    per_page: Annotated[Optional[int], Query(None, description=\"Количество отелей на странице\", ge=1, lt=30)]\r\n\r\n\r\nPaginationDep = Annotated[PaginationParams, Depends()]\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/api/dependencies.py b/src/api/dependencies.py
+--- a/src/api/dependencies.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/api/dependencies.py	(date 1750896360495)
+@@ -1,8 +1,12 @@
+ from typing import Annotated, Optional
+ 
+-from fastapi import Query, Depends
++from fastapi import Query, Depends, HTTPException, Request
+ from pydantic import BaseModel
+ 
++from src.DB import async_session_maker
++from src.services.auth import AuthService
++from src.utils.db_manager import DBManager
++
+ 
+ class PaginationParams(BaseModel):
+     page: Annotated[Optional[int], Query(1, description="Номер страницы", ge=1)]
+@@ -10,3 +14,26 @@
+ 
+ 
+ PaginationDep = Annotated[PaginationParams, Depends()]
++
++
++def get_token(request: Request) -> str:
++    token = request.cookies.get("access_token")
++    if not token:
++        raise HTTPException(status_code=401, detail="Нет токена доступа")
++    return token
++
++
++def get_current_user_id(token: str = Depends(get_token)) -> int:
++    data = AuthService().decode_token(token)
++    return data["user_id"]
++
++
++UserIdDep = Annotated[int, Depends(get_current_user_id)]
++
++
++async def get_db():
++    async with DBManager(session_factory=async_session_maker) as db:
++        yield db
++
++
++DBDep = Annotated[DBManager, Depends(get_db)]
+Index: tests/conftest.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/tests/conftest.py b/tests/conftest.py
+new file mode 100644
+--- /dev/null	(date 1750896360479)
++++ b/tests/conftest.py	(date 1750896360479)
+@@ -0,0 +1,17 @@
++import pytest
++
++from src.DB import Base, engine_null_pool
++from src.config import settings
++from src.models import *
++
++
++@pytest.fixture(scope="session", autouse=True)
++async def check_test_mode():
++    assert settings.MODE == 'TEST'
++
++
++@pytest.fixture(scope="session", autouse=True)
++async def async_main(check_test_mode):
++    async with engine_null_pool.begin() as conn:
++        await conn.run_sync(Base.metadata.drop_all)
++        await conn.run_sync(Base.metadata.create_all)
+Index: src/models/__init__,py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/models/__init__,py b/src/models/__init__,py
+new file mode 100644
+--- /dev/null	(date 1750896360482)
++++ b/src/models/__init__,py	(date 1750896360482)
+@@ -0,0 +1,5 @@
++from src.models.hotels import HotelsModel
++from src.models.rooms import RoomsModel
++from src.models.users import UsersModel
++from src.models.bookings import BookingsModel
++from src.models.facilities import FacilitiesModel
+\ No newline at end of file
+Index: pytest.ini
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pytest.ini b/pytest.ini
+new file mode 100644
+--- /dev/null	(date 1750896360486)
++++ b/pytest.ini	(date 1750896360486)
+@@ -0,0 +1,5 @@
++[pytest]
++pythonpath = . src
++env_files =
++    .env-test
++asyncio_mode = auto
+\ No newline at end of file
+Index: tests/integration_test/test_auth.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/tests/integration_test/test_auth.py b/tests/integration_test/test_auth.py
+new file mode 100644
+--- /dev/null	(date 1750896360490)
++++ b/tests/integration_test/test_auth.py	(date 1750896360490)
+@@ -0,0 +1,14 @@
++from src.services.auth import AuthService
++
++
++def test_decode_and_encode_access_token():
++    data = {"user_id": 1}
++    jwt_token = AuthService().create_access_token(data)
++
++    assert jwt_token
++    assert isinstance(jwt_token, str)
++
++    payload = AuthService().decode_token(jwt_token)
++
++    assert payload
++    assert payload["user_id"] == data["user_id"]
+Index: src/config.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from pydantic_settings import BaseSettings, SettingsConfigDict\r\n\r\n\r\nclass Settings(BaseSettings):\r\n    DB_HOST: str\r\n    DB_PORT: int\r\n    DB_USER: str\r\n    DB_PASS: str\r\n    DB_NAME: str\r\n\r\n    @property\r\n    def DB_URL(self):\r\n        return f\"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}\"\r\n\r\n    model_config = SettingsConfigDict(env_file=\".env\")\r\n\r\n\r\nsettings = Settings()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/config.py b/src/config.py
+--- a/src/config.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/config.py	(date 1750896360506)
+@@ -1,17 +1,31 @@
++from typing import Literal
++
+ from pydantic_settings import BaseSettings, SettingsConfigDict
+ 
+ 
+ class Settings(BaseSettings):
++    MODE: Literal["TEST", "LOCAL", "DEV", "PROD"]
++
+     DB_HOST: str
+     DB_PORT: int
+     DB_USER: str
+     DB_PASS: str
+     DB_NAME: str
+ 
++    REDIS_HOST: str
++    REDIS_PORT: int
++
++    @property
++    def REDIS_URL(self):
++        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
++
+     @property
+     def DB_URL(self):
+         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+ 
++    JWT_SECRET_KEY: str
++    JWT_ALGORITHM: str
++    ACCESS_TOKEN_EXPIRE_MINUTES: int
+     model_config = SettingsConfigDict(env_file=".env")
+ 
+ 
+Index: src/init.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/init.py b/src/init.py
+new file mode 100644
+--- /dev/null	(date 1750896360492)
++++ b/src/init.py	(date 1750896360492)
+@@ -0,0 +1,7 @@
++from src.config import settings
++from src.connectors.redis_connector import RedisConnector
++
++redis_connector = RedisConnector(
++    host=settings.REDIS_HOST,
++    port=settings.REDIS_PORT,
++)
+Index: .env-test
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.env-test b/.env-test
+new file mode 100644
+--- /dev/null	(date 1750896360498)
++++ b/.env-test	(date 1750896360498)
+@@ -0,0 +1,14 @@
++MODE=TEST
++
++DB_HOST=localhost
++DB_PORT=5432
++DB_USER=postgres
++DB_PASS=12090010
++DB_NAME=test
++
++REDIS_HOST=localhost
++REDIS_PORT=6379
++
++JWT_SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
++JWT_ALGORITHM=HS256
++ACCESS_TOKEN_EXPIRE_MINUTES=30
+\ No newline at end of file
+Index: .env
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>DB_HOST=localhost\r\nDB_PORT=5432\r\nDB_USER=postgres\r\nDB_PASS=12090010\r\nDB_NAME=booking\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.env b/.env
+--- a/.env	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/.env	(date 1750896360512)
+@@ -1,6 +1,14 @@
++MODE=LOCAL
++
+ DB_HOST=localhost
+ DB_PORT=5432
+ DB_USER=postgres
+ DB_PASS=12090010
+ DB_NAME=booking
+ 
++REDIS_HOST=localhost
++REDIS_PORT=6379
++
++JWT_SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
++JWT_ALGORITHM=HS256
++ACCESS_TOKEN_EXPIRE_MINUTES=30
+\ No newline at end of file
+Index: src/api/auth.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/api/auth.py b/src/api/auth.py
+new file mode 100644
+--- /dev/null	(date 1750896360500)
++++ b/src/api/auth.py	(date 1750896360500)
+@@ -0,0 +1,57 @@
++from fastapi import APIRouter, HTTPException, Response
++
++from src.api.dependencies import UserIdDep, DBDep
++from src.schemas.users import UserRequestAdd, UserAdd, UserLogin
++from src.services.auth import AuthService
++
++router = APIRouter(prefix="/auth", tags=["Авторизация и аутентификация"])
++
++
++@router.post('/register')
++async def register_user(
++        db: DBDep,
++        data: UserRequestAdd,
++):
++    hashed_password = AuthService().hash_password(data.password)
++    new_user_data = UserAdd(email=data.email,
++                            hashed_password=hashed_password,
++                            first_name=data.first_name,
++                            last_name=data.last_name,
++                            )
++    await db.users.add(new_user_data)
++    await db.commit()
++    return {"status": "OK"}
++
++
++@router.post('/login')
++async def login_user(
++        db: DBDep,
++        data: UserLogin,
++        response: Response,
++):
++    try:
++        user = await db.users.get_user_with_hashed_password(email=data.email)
++    except Exception as e:
++        raise HTTPException(status_code=401, detail="Пользователь с таким email не зарегистрирован")
++    if not AuthService().verify_password(data.password, user.hashed_password):
++        raise HTTPException(status_code=401, detail="Пароль неверен")
++    access_token = AuthService().create_access_token({"user_id": user.id})
++    response.set_cookie("access_token", access_token)
++    return {"access_token": access_token}
++
++
++@router.get('/me')
++async def get_me(
++        db: DBDep,
++        user_id: UserIdDep,
++):
++    user = await db.users.get_one_or_none(id=user_id)
++    return user
++
++
++@router.get('/logout')
++async def logout(
++        response: Response,
++):
++    AuthService().logout_user(response)
++    return {"status": "OK"}
+Index: src/schemas/users.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/schemas/users.py b/src/schemas/users.py
+new file mode 100644
+--- /dev/null	(date 1750896360503)
++++ b/src/schemas/users.py	(date 1750896360503)
+@@ -0,0 +1,33 @@
++from pydantic import BaseModel, ConfigDict, EmailStr, Field
++
++
++class UserRequestAdd(BaseModel):
++    email: EmailStr
++    password: str
++    first_name: str | None = Field(None)
++    last_name: str | None = Field(None)
++
++
++class UserAdd(BaseModel):
++    email: EmailStr
++    hashed_password: str
++    first_name: str | None = Field(None)
++    last_name: str | None = Field(None)
++
++
++class UserLogin(BaseModel):
++    email: EmailStr
++    password: str
++
++
++class User(BaseModel):
++    id: int
++    email: EmailStr
++    first_name: str | None = Field(None)
++    last_name: str | None = Field(None)
++
++    model_config = ConfigDict(from_attributes=True)
++
++
++class UserWithHashedPassword(User):
++    hashed_password: str
+Index: src/repositories/users.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/users.py b/src/repositories/users.py
+new file mode 100644
+--- /dev/null	(date 1750896360509)
++++ b/src/repositories/users.py	(date 1750896360509)
+@@ -0,0 +1,18 @@
++from pydantic import EmailStr
++from sqlalchemy import select
++
++from src.models.users import UsersModel
++from src.repositories.base import BaseRepository
++from src.repositories.mappers.mappers import UserDataMapper
++from src.schemas.users import UserWithHashedPassword
++
++
++class UsersRepository(BaseRepository):
++    model = UsersModel
++    mapper = UserDataMapper
++
++    async def get_user_with_hashed_password(self, email: EmailStr):
++        query = select(self.model).filter_by(email=email)
++        result = await self.session.execute(query)
++        model = result.scalars().one()
++        return UserWithHashedPassword.model_validate(model)
+Index: src/connectors/redis_connector.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/connectors/redis_connector.py b/src/connectors/redis_connector.py
+new file mode 100644
+--- /dev/null	(date 1750896360515)
++++ b/src/connectors/redis_connector.py	(date 1750896360515)
+@@ -0,0 +1,27 @@
++import redis.asyncio as redis
++
++
++class RedisConnector:
++    def __init__(self, host: str, port: int, db=0):
++        self.host = host
++        self.port = port
++        self.redis = None
++
++    async def connect(self):
++        self.redis = await redis.Redis(host=self.host, port=self.port)
++
++    async def set(self, key: str, value: str, expire: int = None):
++        if expire:
++            await self.redis.set(key, value, ex=expire)
++        else:
++            await self.redis.set(key, value)
++
++    async def get(self, key):
++        return await self.redis.get(key)
++
++    async def delete(self, key):
++        await self.redis.delete(key)
++
++    async def disconnect(self):
++        if self.redis:
++            await self.redis.close()
+Index: src/services/auth.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/services/auth.py b/src/services/auth.py
+new file mode 100644
+--- /dev/null	(date 1750896360518)
++++ b/src/services/auth.py	(date 1750896360518)
+@@ -0,0 +1,33 @@
++from datetime import datetime, timezone, timedelta
++
++import jwt
++from fastapi import HTTPException, Response
++from passlib.context import CryptContext
++
++from src.config import settings
++
++
++class AuthService:
++    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
++
++    def create_access_token(self, data: dict) -> str:
++        to_encode = data.copy()
++        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
++        to_encode |= ({"exp": expire})
++        encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
++        return encoded_jwt
++
++    def hash_password(self, password: str) -> str:
++        return self.pwd_context.hash(password)
++
++    def verify_password(self, plain_password, hashed_password):
++        return self.pwd_context.verify(plain_password, hashed_password)
++
++    def decode_token(self, token: str) -> dict:
++        try:
++            return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
++        except jwt.exceptions.DecodeError:
++            raise HTTPException(status_code=404, detail="Неверный токен")
++
++    def logout_user(self, response: Response):
++        response.delete_cookie("access_token")
+Index: src/api/rooms.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/api/rooms.py b/src/api/rooms.py
+new file mode 100644
+--- /dev/null	(date 1750896360521)
++++ b/src/api/rooms.py	(date 1750896360521)
+@@ -0,0 +1,125 @@
++from datetime import date
++
++from fastapi import APIRouter, Body, Query
++from fastapi_cache.decorator import cache
++
++from src.api.dependencies import DBDep
++from src.schemas.facilities import RoomsFacilityAdd
++from src.schemas.rooms import RoomAdd, RoomPatch, RoomAddRequest, RoomPatchRequest
++
++router = APIRouter(prefix="/hotels", tags=["Номера отеля"])
++
++
++@router.get("/{hotel_id}/rooms", summary="Список номеров")
++@cache(expire=60)
++async def get_rooms(
++        hotel_id: int,
++        db: DBDep,
++        date_from: date = Query(example="2025-01-27"),
++        date_to: date = Query(example="2025-03-27"),
++):
++    return await db.rooms.get_filtered_by_time(hotel_id=hotel_id, date_from=date_from, date_to=date_to)
++
++
++@router.get("/{hotel_id}/rooms/{room_id}", summary="Получить номер")
++@cache(expire=60)
++async def get_room(
++        hotel_id: int,
++        room_id: int,
++        db: DBDep,
++):
++    return await db.rooms.get_room_or_none(hotel_id=hotel_id, id=room_id)
++
++
++@router.post("/{hotel_id}/rooms", summary="Создать номер")
++async def create_room(
++        db: DBDep,
++        hotel_id: int,
++        room_data: RoomAddRequest = Body(openapi_examples={
++            "1": {"summary": "Номер 1",
++                  "value": {
++                      "title": "Номер 1",
++                      "description": "Номер на 1-ом этаже",
++                      "price": 1000,
++                      "quantity": 4,
++                      "facilities_ids": [3],
++                  }
++                  },
++            "2": {"summary": "Номер 2",
++                  "value": {
++                      "title": "Номер 2",
++                      "description": "Номер на 2-ом этаже",
++                      "price": 2000,
++                      "quantity": 3,
++                      "facilities_ids": [4],
++                  }
++                  },
++            "3": {"summary": "Номер 3",
++                  "value": {
++                      "title": "Номер 3",
++                      "description": "Номер на 3-ем этаже",
++                      "price": 3000,
++                      "quantity": 4,
++                      "facilities_ids": [3, 4],
++                  }
++                  },
++            "4": {"summary": "Номер 4",
++                  "value": {
++                      "title": "Номер 4",
++                      "description": "Номер на 4-ом этаже",
++                      "price": 4000,
++                      "quantity": 2,
++                      "facilities_ids": [3, 4],
++                  }
++                  },
++        })
++):
++    _room_data = RoomAdd(hotel_id=hotel_id, **room_data.model_dump())
++    room = await db.rooms.add(_room_data)
++
++    room_facilities_data = [RoomsFacilityAdd(room_id=room.id, facility_id=f_id) for f_id in room_data.facilities_ids]
++    await db.rooms_facilities.add_bulk(room_facilities_data)
++    await db.commit()
++    return {"status": "OK", "data": room}
++
++
++@router.put("/{hotel_id}/rooms/{room_id}", summary="Изменить номер")
++async def edit_room(
++        db: DBDep,
++        hotel_id: int,
++        room_id: int,
++        room_data: RoomAddRequest
++):
++    _room_data = RoomAdd(hotel_id=hotel_id, **room_data.model_dump())
++    await db.rooms.edit(_room_data, id=room_id, hotel_id=hotel_id)
++    await db.rooms_facilities.edit_facility(room_id, facility_id=room_data.facilities_ids)
++    await db.commit()
++    return {"status": "OK"}
++
++
++@router.patch("/{hotel_id}/rooms/{room_id}", summary="Частичное изменение")
++async def patch_room(
++        db: DBDep,
++        hotel_id: int,
++        room_id: int,
++        room_data: RoomPatchRequest
++):
++    _room_data = RoomPatch(hotel_id=hotel_id, **room_data.model_dump(exclude_unset=True))
++    await db.rooms.edit(_room_data, id=room_id, exclude_unset=True)
++
++    if room_data.facilities_ids:
++        await db.rooms_facilities.edit_facility(room_id=room_id, facility_id=room_data.facilities_ids)
++
++    await db.commit()
++    return {"status": "OK"}
++
++
++@router.delete("/{hotel_id}/rooms/{room_id}", summary="Удалить номер")
++async def delete_room(
++        db: DBDep,
++        hotel_id: int,
++        room_id: int
++):
++    await db.rooms.delete(hotel_id=hotel_id, id=room_id)
++    await db.commit()
++    return {"status": "OK"}
+Index: src/schemas/rooms.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/schemas/rooms.py b/src/schemas/rooms.py
+new file mode 100644
+--- /dev/null	(date 1750896360524)
++++ b/src/schemas/rooms.py	(date 1750896360524)
+@@ -0,0 +1,45 @@
++from pydantic import BaseModel, ConfigDict
++
++from src.schemas.facilities import Facility
++
++
++class RoomAddRequest(BaseModel):
++    title: str
++    description: str | None = None
++    price: int
++    quantity: int
++    facilities_ids: list[int] = []
++
++
++class RoomAdd(BaseModel):
++    hotel_id: int
++    title: str
++    description: str | None = None
++    price: int
++    quantity: int
++
++
++class Room(RoomAdd):
++    id: int
++
++    model_config = ConfigDict(from_attributes=True)
++
++
++class RoomWithRelations(Room):
++    facilities: list[Facility]
++
++
++class RoomPatchRequest(BaseModel):
++    title: str | None = None
++    description: str | None = None
++    price: int | None = None
++    quantity: int | None = None
++    facilities_ids: list[int] = []
++
++
++class RoomPatch(BaseModel):
++    hotel_id: int | None = None
++    title: str | None = None
++    description: str | None = None
++    price: int | None = None
++    quantity: int | None = None
+Index: src/utils/db_manager.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/utils/db_manager.py b/src/utils/db_manager.py
+new file mode 100644
+--- /dev/null	(date 1750896360526)
++++ b/src/utils/db_manager.py	(date 1750896360526)
+@@ -0,0 +1,29 @@
++from src.repositories.hotels import HotelsRepository
++from src.repositories.rooms import RoomsRepository
++from src.repositories.users import UsersRepository
++from src.repositories.bookings import BookingsRepository
++from src.repositories.facilities import FacilitiesRepository, RoomsFacilitiesRepository
++
++
++class DBManager:
++    def __init__(self, session_factory):
++        self.session_factory = session_factory
++
++    async def __aenter__(self):
++        self.session = self.session_factory()
++
++        self.hotels = HotelsRepository(self.session)
++        self.rooms = RoomsRepository(self.session)
++        self.users = UsersRepository(self.session)
++        self.bookings = BookingsRepository(self.session)
++        self.facilities = FacilitiesRepository(self.session)
++        self.rooms_facilities = RoomsFacilitiesRepository(self.session)
++
++        return self
++
++    async def __aexit__(self, *args):
++        await self.session.rollback()
++        await self.session.close()
++
++    async def commit(self):
++        await self.session.commit()
+Index: src/models/bookings.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/models/bookings.py b/src/models/bookings.py
+new file mode 100644
+--- /dev/null	(date 1750896360535)
++++ b/src/models/bookings.py	(date 1750896360535)
+@@ -0,0 +1,22 @@
++from datetime import date
++
++from sqlalchemy import ForeignKey
++from sqlalchemy.ext.hybrid import hybrid_property
++from sqlalchemy.orm import Mapped, mapped_column
++
++from src.DB import Base
++
++
++class BookingsModel(Base):
++    __tablename__ = "bookings"
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    user_id: Mapped[id] = mapped_column(ForeignKey('users.id'))
++    room_id: Mapped[int] = mapped_column(ForeignKey('rooms.id'))
++    date_from: Mapped[date]
++    date_to: Mapped[date]
++    price: Mapped[int]
++
++    @hybrid_property
++    def total_cost(self) -> int:
++        return self.price * (self.date_to - self.date_from).days
+Index: tests/unit_tests/test_auth.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/tests/unit_tests/test_auth.py b/tests/unit_tests/test_auth.py
+new file mode 100644
+--- /dev/null	(date 1750896360538)
++++ b/tests/unit_tests/test_auth.py	(date 1750896360538)
+@@ -0,0 +1,9 @@
++from src.services.auth import AuthService
++
++
++def test_create_access_token():
++    data = {"user_id": 1}
++    jwt_token = AuthService().create_access_token(data)
++
++    assert jwt_token
++    assert isinstance(jwt_token, str)
+Index: tests/integration_test/hotels/test_db.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/tests/integration_test/hotels/test_db.py b/tests/integration_test/hotels/test_db.py
+new file mode 100644
+--- /dev/null	(date 1750896360541)
++++ b/tests/integration_test/hotels/test_db.py	(date 1750896360541)
+@@ -0,0 +1,11 @@
++from src.DB import async_session_maker
++from src.schemas.hotels import HotelAdd
++from src.utils.db_manager import DBManager
++
++
++async def test_add_hotel():
++    hotel_data = HotelAdd(title="Novatel", location='Москва, ул.Строителей, 12')
++    async with DBManager(session_factory=async_session_maker) as db:
++        new_hotel_data = await db.hotels.add(hotel_data)
++        await db.commit()
++        print(f"{new_hotel_data=}")
+Index: src/tasks/celery_app.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/tasks/celery_app.py b/src/tasks/celery_app.py
+new file mode 100644
+--- /dev/null	(date 1750896360546)
++++ b/src/tasks/celery_app.py	(date 1750896360546)
+@@ -0,0 +1,18 @@
++from celery import Celery
++
++from src.config import settings
++
++celery_instance = Celery(
++    'tasks',
++    broker=settings.REDIS_URL,
++    include=[
++        "src.tasks.tasks"
++    ],
++)
++
++celery_instance.conf.beat_schedule = {
++    "cat": {
++        'task': 'booking_today_checkin',
++        'schedule': 5,
++    }
++}
+Index: src/api/bookings.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/api/bookings.py b/src/api/bookings.py
+new file mode 100644
+--- /dev/null	(date 1750896360549)
++++ b/src/api/bookings.py	(date 1750896360549)
+@@ -0,0 +1,79 @@
++from fastapi import APIRouter, Body, HTTPException
++from fastapi_cache.decorator import cache
++from sqlalchemy.exc import NoResultFound
++
++from src.api.dependencies import DBDep, UserIdDep
++from src.schemas.bookings import BookingAdd, BookingRequestAdd
++
++router = APIRouter(prefix="/bookings", tags=["Бронирование"])
++
++
++@router.post("", summary="Создать бронирование")
++async def create_booking(
++        db: DBDep,
++        user_id: UserIdDep,
++        booking_data: BookingRequestAdd = Body(openapi_examples={
++            "1": {
++                "summary": "Пример 1",
++                "value": {
++                    "room_id": "1",
++                    "date_from": "2025-01-25",
++                    "date_to": "2025-02-25",
++                }
++            },
++            "2": {
++                "summary": "Пример 2",
++                "value": {
++                    "room_id": "1",
++                    "date_from": "2025-03-25",
++                    "date_to": "2025-04-25",
++                }
++            },
++            "3": {
++                "summary": "Пример 3",
++                "value": {
++                    "room_id": "1",
++                    "date_from": "2025-05-25",
++                    "date_to": "2025-06-25",
++                }
++            }
++        }),
++):
++    try:
++        user = await db.users.get_one_or_none(id=user_id)
++    except NoResultFound:
++        raise HTTPException(status_code=404, detail="Пользователь не авторизирован")
++    try:
++        room = await db.rooms.get_one_or_none(id=booking_data.room_id)
++        price: int = room.price
++    except NoResultFound:
++        raise HTTPException(status_code=404, detail="Комната не найдена")
++    _booking_data = BookingAdd(
++        user_id=user.id,
++        price=price,
++        **booking_data.model_dump()
++    )
++    booking = await db.bookings.add(_booking_data)
++    await db.commit()
++    return {"status": "OK", "data": booking}
++
++
++@router.get("/bookings", summary="Список бронирования")
++@cache(expire=60)
++async def get_bookings(
++        db: DBDep,
++):
++    return await db.bookings.get_all()
++
++
++@router.get("/bookings/me", summary="Бронирование пользователя")
++@cache(expire=60)
++async def get_booking(
++        db: DBDep,
++        user_id: UserIdDep,
++):
++    try:
++        user = await db.users.get_one_or_none(id=user_id)
++    except NoResultFound:
++        raise HTTPException(status_code=404, detail="Пользователь не авторизирован")
++    return await db.bookings.get_all(user_id=user.id)
+Index: src/schemas/bookings.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/schemas/bookings.py b/src/schemas/bookings.py
+new file mode 100644
+--- /dev/null	(date 1750896360551)
++++ b/src/schemas/bookings.py	(date 1750896360551)
+@@ -0,0 +1,23 @@
++from datetime import date
++
++from pydantic import BaseModel, ConfigDict
++
++
++class BookingRequestAdd(BaseModel):
++    room_id: int
++    date_from: date
++    date_to: date
++
++
++class BookingAdd(BaseModel):
++    user_id: int
++    room_id: int
++    date_from: date
++    date_to: date
++    price: int
++
++
++class Booking(BookingAdd):
++    id: int
++
++    model_config = ConfigDict(from_attributes=True)
+Index: src/tasks/tasks.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/tasks/tasks.py b/src/tasks/tasks.py
+new file mode 100644
+--- /dev/null	(date 1750896360555)
++++ b/src/tasks/tasks.py	(date 1750896360555)
+@@ -0,0 +1,46 @@
++import asyncio
++import os
++from time import sleep
++
++from PIL import Image
++
++from src.DB import async_session_maker_null_pool
++from src.tasks.celery_app import celery_instance
++from src.utils.db_manager import DBManager
++
++
++@celery_instance.task
++def test_task():
++    sleep(5)
++    print("test_task")
++
++
++@celery_instance.task
++def resize_image(image_path: str):
++    sizes = [1000, 500, 200]
++    output_folder = 'src/static/images'
++
++    img = Image.open(image_path)
++
++    base_name = os.path.basename(image_path)
++    name, ext = os.path.splitext(base_name)
++
++    for size in sizes:
++        img_resized = img.resize((size, int(img.height * (size / img.width))), Image.Resampling.LANCZOS)
++        new_file_name = f"{name}_{size}px{ext}"
++        output_path = os.path.join(output_folder, new_file_name)
++        img_resized.save(output_path)
++
++    print(f"Изображение сохранено в следующих разделах: {sizes} в папке {output_folder}")
++
++
++async def get_booking_with_today_checkin_helper():
++    print('Я запустился')
++    async with DBManager(session_factory=async_session_maker_null_pool) as db:
++        bookings = await db.bookings.get_bookings_with_today_checkin()
++        print(f"{bookings=}")
++
++
++@celery_instance.task(name="booking_today_checkin")
++def send_emails_to_users_with_today_checkin():
++    asyncio.run(get_booking_with_today_checkin_helper())
+Index: src/repositories/bookings.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/bookings.py b/src/repositories/bookings.py
+new file mode 100644
+--- /dev/null	(date 1750896360558)
++++ b/src/repositories/bookings.py	(date 1750896360558)
+@@ -0,0 +1,20 @@
++from datetime import date
++
++from sqlalchemy import select
++
++from src.models.bookings import BookingsModel
++from src.repositories.base import BaseRepository
++from src.repositories.mappers.mappers import BookingDataMapper
++
++
++class BookingsRepository(BaseRepository):
++    model = BookingsModel
++    mapper = BookingDataMapper
++
++    async def get_bookings_with_today_checkin(self):
++        query = (
++            select(BookingsModel)
++            .filter(BookingsModel.date_from == date.today())
++        )
++        res = await self.session.execute(query)
++        return [self.mapper.map_to_domain_entity(booking) for booking in res.scalars().all()]
+Index: src/repositories/utils.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/utils.py b/src/repositories/utils.py
+new file mode 100644
+--- /dev/null	(date 1750896360560)
++++ b/src/repositories/utils.py	(date 1750896360560)
+@@ -0,0 +1,51 @@
++from datetime import date
++
++from sqlalchemy import select, func
++
++from src.models.bookings import BookingsModel
++from src.models.rooms import RoomsModel
++
++
++def rooms_ids_for_booking(
++        date_from: date,
++        date_to: date,
++        hotel_id: int | None = None,
++):
++    rooms_count = (
++        select(BookingsModel.room_id, func.count("*").label("rooms_booked"))
++        .select_from(BookingsModel)
++        .filter(
++            BookingsModel.date_from <= date_to,
++            BookingsModel.date_to >= date_from,
++        )
++        .group_by(BookingsModel.room_id)
++        .cte(name="rooms_count")
++    )
++
++    rooms_left_table = (
++        select(
++            RoomsModel.id.label("room_id"),
++            (RoomsModel.quantity - func.coalesce(rooms_count.c.rooms_booked, 0)).label("rooms_left")
++        )
++        .select_from(RoomsModel)
++        .outerjoin(rooms_count, RoomsModel.id == rooms_count.c.room_id)
++        .cte(name="rooms_left_table")
++    )
++
++    rooms_ids_for_hotel = (
++        select(RoomsModel.id)
++        .select_from(RoomsModel)
++    )
++    if hotel_id is not None:
++        rooms_ids_for_hotel = rooms_ids_for_hotel.filter_by(hotel_id=hotel_id)
++
++    rooms_ids_to_get = (
++        select(rooms_left_table.c.room_id)
++        .select_from(rooms_left_table)
++        .filter(
++            rooms_left_table.c.rooms_left > 0,
++            rooms_left_table.c.room_id.in_(rooms_ids_for_hotel)
++        )
++    )
++
++    return rooms_ids_to_get
+Index: src/models/facilities.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/models/facilities.py b/src/models/facilities.py
+new file mode 100644
+--- /dev/null	(date 1750896360563)
++++ b/src/models/facilities.py	(date 1750896360563)
+@@ -0,0 +1,24 @@
++from sqlalchemy import String, ForeignKey
++from sqlalchemy.orm import Mapped, mapped_column, relationship
++
++from src.DB import Base
++
++
++class FacilitiesModel(Base):
++    __tablename__ = 'facilities'
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    title: Mapped[str] = mapped_column(String(100))
++
++    rooms: Mapped[list["RoomsModel"]] = relationship(
++        back_populates="facilities",
++        secondary="rooms_facilities",
++    )
++
++
++class RoomsFacilitiesModel(Base):
++    __tablename__ = 'rooms_facilities'
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"))
++    facility_id: Mapped[int] = mapped_column(ForeignKey("facilities.id"))
+Index: src/api/facilities.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/api/facilities.py b/src/api/facilities.py
+new file mode 100644
+--- /dev/null	(date 1750896360565)
++++ b/src/api/facilities.py	(date 1750896360565)
+@@ -0,0 +1,54 @@
++from fastapi import APIRouter, Body
++from fastapi_cache.decorator import cache
++
++from src.api.dependencies import DBDep
++from src.schemas.facilities import FacilityAdd
++from src.tasks.tasks import test_task
++
++router = APIRouter(prefix="/facilities", tags=["Удобства и услуги"])
++
++
++@router.get("", summary="Список удобств и услуг")
++@cache(expire=60)
++async def get_facilities(db: DBDep):
++    return await db.facilities.get_all()
++
++
++@router.post("", summary="Создать удобство или услугу")
++async def create_facility(
++        db: DBDep,
++        facilities_data: FacilityAdd = Body(openapi_examples={
++            "1": {"summary": "Wifi",
++                  "value": {
++                      "title": "Wifi"}
++                  },
++            "2": {"summary": "Parking",
++                  "value": {
++                      "title": "Parking"}
++                  },
++            "3": {"summary": "Balcony",
++                  "value": {
++                      "title": "Balcony"}
++                  },
++            "4": {"summary": "Conditioner",
++                  "value": {
++                      "title": "Conditioner"}
++                  },
++        })
++):
++    facilities = await db.facilities.add(facilities_data)
++    await db.commit()
++
++    test_task.delay()
++
++    return {"status": "OK", "data": facilities}
++
++
++@router.delete("/{facilities_id}", summary="Удалить удобство или услугу")
++async def delete_facility(
++        db: DBDep,
++        facilities_id: int
++):
++    await db.facilities.delete(id=facilities_id)
++    await db.commit()
++    return {"status": "OK"}
+Index: src/repositories/facilities.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/facilities.py b/src/repositories/facilities.py
+new file mode 100644
+--- /dev/null	(date 1750896360571)
++++ b/src/repositories/facilities.py	(date 1750896360571)
+@@ -0,0 +1,48 @@
++from sqlalchemy import select, insert, delete
++
++from src.models.facilities import FacilitiesModel, RoomsFacilitiesModel
++from src.repositories.base import BaseRepository
++from src.repositories.mappers.mappers import FacilityDataMapper, RoomFacilityDataMapper
++
++
++class FacilitiesRepository(BaseRepository):
++    model = FacilitiesModel
++    mapper = FacilityDataMapper
++
++
++class RoomsFacilitiesRepository(BaseRepository):
++    model = RoomsFacilitiesModel
++    mapper = RoomFacilityDataMapper
++
++    async def edit_facility(
++            self,
++            room_id: int,
++            facility_id: list[int],
++    ) -> None:
++        get_current_facilities_ids_query = (
++            select(self.model.facility_id)
++            .select_from(RoomsFacilitiesModel)
++            .filter_by(room_id=room_id)
++        )
++        res = await self.session.execute(get_current_facilities_ids_query)
++        current_facilities_ids: list[int] = res.scalars().all()
++
++        to_add = set(facility_id) - set(current_facilities_ids)
++        to_delete = set(current_facilities_ids) - set(facility_id)
++
++        if to_add:
++            add_m2m_facilities_stmt = (
++                insert(self.model)
++                .values([{"room_id": room_id, "facility_id": f_id} for f_id in to_add])
++            )
++            await self.session.execute(add_m2m_facilities_stmt)
++
++        if to_delete:
++            delete_m2m_facilities_stmt = (
++                delete(self.model)
++                .filter(
++                    self.model.room_id == room_id,
++                    self.model.facility_id.in_(to_add),
++                )
++            )
++            await self.session.execute(delete_m2m_facilities_stmt)
+Index: src/api/images.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/api/images.py b/src/api/images.py
+new file mode 100644
+--- /dev/null	(date 1750896360574)
++++ b/src/api/images.py	(date 1750896360574)
+@@ -0,0 +1,16 @@
++import shutil
++
++from fastapi import APIRouter, UploadFile
++
++from src.tasks.tasks import resize_image
++
++router = APIRouter(prefix="/images", tags=["Изображения"])
++
++
++@router.post("")
++def upload_image(file: UploadFile):
++    image_path = f"src/static/images/{file.filename}"
++    with open(image_path, "wb+") as new_file:
++        shutil.copyfileobj(file.file, new_file)
++
++    resize_image.delay(image_path)
+Index: .idea/.sourcegraph/cody_settings.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>{\r\n    \"cody\" : {\r\n        \"advanced\" : {\r\n            \"agent\" : {\r\n                \"capabilities\" : {\r\n                    \"storage\" : true\r\n                },\r\n                \"extension\" : {\r\n                    \"version\" : \"7.86.0\"\r\n                },\r\n                \"ide\" : {\r\n                    \"name\" : \"JetBrains\",\r\n                    \"productCode\" : 6,\r\n                    \"version\" : \"PY-251.23774.444\"\r\n                },\r\n                \"running\" : true\r\n            },\r\n            \"hasNativeWebview\" : true\r\n        },\r\n        \"autocomplete\" : {\r\n            \"advanced\" : {\r\n                \"model\" : null,\r\n                \"provider\" : null\r\n            },\r\n            \"enabled\" : true\r\n        },\r\n        \"codebase\" : null,\r\n        \"customHeaders\" : {},\r\n        \"debug\" : {\r\n            \"verbose\" : false\r\n        },\r\n        \"experimental\" : {\r\n            \"foldingRanges\" : \"indentation-based\",\r\n            \"tracing\" : false\r\n        },\r\n        \"serverEndpoint\" : null,\r\n        \"suggestions\" : {\r\n            \"mode\" : \"autocomplete\"\r\n        },\r\n        \"telemetry\" : {\r\n            \"clientName\" : null,\r\n            \"level\" : \"agent\"\r\n        }\r\n    }\r\n}\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/.sourcegraph/cody_settings.json b/.idea/.sourcegraph/cody_settings.json
+--- a/.idea/.sourcegraph/cody_settings.json	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/.idea/.sourcegraph/cody_settings.json	(date 1750896360529)
+@@ -6,7 +6,7 @@
+                     "storage" : true
+                 },
+                 "extension" : {
+-                    "version" : "7.86.0"
++                    "version" : "7.86.1"
+                 },
+                 "ide" : {
+                     "name" : "JetBrains",
+Index: src/schemas/facilities.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/schemas/facilities.py b/src/schemas/facilities.py
+new file mode 100644
+--- /dev/null	(date 1750896360580)
++++ b/src/schemas/facilities.py	(date 1750896360580)
+@@ -0,0 +1,20 @@
++from pydantic import BaseModel, ConfigDict
++
++
++class FacilityAdd(BaseModel):
++    title: str
++
++
++class Facility(FacilityAdd):
++    id: int
++
++    model_config = ConfigDict(from_attributes=True)
++
++
++class RoomsFacilityAdd(BaseModel):
++    room_id: int
++    facility_id: int
++
++
++class RoomFacility(RoomsFacilityAdd):
++    id: int
+Index: src/schemas/hotels.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from pydantic import BaseModel\r\n\r\n\r\nclass Hotel(BaseModel):\r\n    title: str\r\n    location: str\r\n\r\n\r\nclass HotelPATCH(BaseModel):\r\n    title: str | None = None\r\n    location: str | None = None\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/schemas/hotels.py b/src/schemas/hotels.py
+--- a/src/schemas/hotels.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/schemas/hotels.py	(date 1750896360532)
+@@ -1,11 +1,17 @@
+-from pydantic import BaseModel
++from pydantic import BaseModel, Field, ConfigDict
+ 
+ 
+-class Hotel(BaseModel):
++class HotelAdd(BaseModel):
+     title: str
+     location: str
+ 
+ 
++class Hotel(HotelAdd):
++    id: int
++
++    model_config = ConfigDict(from_attributes=True)
++
++
+ class HotelPATCH(BaseModel):
+-    title: str | None = None
+-    location: str | None = None
++    title: str | None = Field(None)
++    location: str | None = Field(None)
+Index: src/repositories/mappers/base.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/mappers/base.py b/src/repositories/mappers/base.py
+new file mode 100644
+--- /dev/null	(date 1750896360588)
++++ b/src/repositories/mappers/base.py	(date 1750896360588)
+@@ -0,0 +1,21 @@
++from typing import TypeVar
++
++from pydantic import BaseModel
++
++from src.DB import Base
++
++DBModelType = TypeVar("DBModelType", bound=Base)
++SchemaType = TypeVar("SchemaType", bound=BaseModel)
++
++
++class DataMapper:
++    db_model: type[DBModelType] = None
++    schema: type[SchemaType] = None
++
++    @classmethod
++    def map_to_domain_entity(cls, data):
++        return cls.schema.model_validate(data, from_attributes=True)
++
++    @classmethod
++    def map_to_persistence_entity(cls, data):
++        return cls.db_model(**data.model_dump())
+Index: src/repositories/mappers/mappers.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/mappers/mappers.py b/src/repositories/mappers/mappers.py
+new file mode 100644
+--- /dev/null	(date 1750896360591)
++++ b/src/repositories/mappers/mappers.py	(date 1750896360591)
+@@ -0,0 +1,46 @@
++from src.models.bookings import BookingsModel
++from src.models.facilities import FacilitiesModel, RoomsFacilitiesModel
++from src.models.hotels import HotelsModel
++from src.models.rooms import RoomsModel
++from src.models.users import UsersModel
++from src.repositories.mappers.base import DataMapper
++from src.schemas.bookings import Booking
++from src.schemas.facilities import Facility, RoomFacility
++from src.schemas.hotels import Hotel
++from src.schemas.rooms import Room, RoomWithRelations
++from src.schemas.users import User
++
++
++class HotelDataMapper(DataMapper):
++    db_model = HotelsModel
++    schema = Hotel
++
++
++class RoomDataMapper(DataMapper):
++    db_model = RoomsModel
++    schema = Room
++
++
++class RoomDataWithRelationsMapper(DataMapper):
++    db_model = RoomsModel
++    schema = RoomWithRelations
++
++
++class UserDataMapper(DataMapper):
++    db_model = UsersModel
++    schema = User
++
++
++class BookingDataMapper(DataMapper):
++    db_model = BookingsModel
++    schema = Booking
++
++
++class FacilityDataMapper(DataMapper):
++    db_model = FacilitiesModel
++    schema = Facility
++
++
++class RoomFacilityDataMapper(DataMapper):
++    db_model = RoomsFacilitiesModel
++    schema = RoomFacility
+Index: src/DB.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker\r\nfrom sqlalchemy.orm import DeclarativeBase\r\n\r\nfrom src.config import settings\r\n\r\nengine = create_async_engine(settings.DB_URL)\r\n\r\nasync_session_maker = async_sessionmaker(bind=engine, expire_on_commit=False)\r\n\r\n\r\nclass BaseModel(DeclarativeBase):\r\n    pass\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/DB.py b/src/DB.py
+--- a/src/DB.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/DB.py	(date 1750896360543)
+@@ -1,12 +1,15 @@
++from sqlalchemy import NullPool
+ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+ from sqlalchemy.orm import DeclarativeBase
+ 
+ from src.config import settings
+ 
+ engine = create_async_engine(settings.DB_URL)
++engine_null_pool = create_async_engine(settings.DB_URL, poolclass=NullPool)
+ 
+ async_session_maker = async_sessionmaker(bind=engine, expire_on_commit=False)
++async_session_maker_null_pool = async_sessionmaker(bind=engine_null_pool, expire_on_commit=False)
+ 
+ 
+-class BaseModel(DeclarativeBase):
++class Base(DeclarativeBase):
+     pass
+Index: requirements.txt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>aiohappyeyeballs==2.6.1\r\naiohttp==3.11.16\r\naiosignal==1.3.2\r\nalembic==1.15.2\r\nannotated-types==0.7.0\r\nanyio==4.9.0\r\nasyncpg==0.30.0\r\nattrs==25.3.0\r\nblack==25.1.0\r\ncertifi==2025.1.31\r\nclick==8.1.8\r\ncolorama==0.4.6\r\ndnspython==2.7.0\r\nemail_validator==2.2.0\r\nfastapi==0.115.12\r\nfastapi-cli==0.0.7\r\nfrozenlist==1.6.0\r\ngreenlet==3.2.0\r\nh11==0.14.0\r\nhttpcore==1.0.8\r\nhttptools==0.6.4\r\nhttpx==0.28.1\r\nidna==3.10\r\nJinja2==3.1.6\r\nMako==1.3.10\r\nmarkdown-it-py==3.0.0\r\nMarkupSafe==3.0.2\r\nmdurl==0.1.2\r\nmultidict==6.4.3\r\nmypy_extensions==1.1.0\r\npackaging==25.0\r\npathspec==0.12.1\r\nplatformdirs==4.3.7\r\npropcache==0.3.1\r\npydantic==2.11.3\r\npydantic-settings==2.9.1\r\npydantic_core==2.33.1\r\nPygments==2.19.1\r\npython-dotenv==1.1.0\r\npython-multipart==0.0.20\r\nPyYAML==6.0.2\r\nrich==14.0.0\r\nrich-toolkit==0.14.1\r\nshellingham==1.5.4\r\nsniffio==1.3.1\r\nSQLAlchemy==2.0.40\r\nstarlette==0.46.2\r\ntyper==0.15.2\r\ntyping-inspection==0.4.0\r\ntyping_extensions==4.13.2\r\nuvicorn==0.34.1\r\nwatchfiles==1.0.5\r\nwebsockets==15.0.1\r\nyarl==1.20.0\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/requirements.txt b/requirements.txt
+--- a/requirements.txt	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/requirements.txt	(date 1750896360569)
+@@ -2,17 +2,25 @@
+ aiohttp==3.11.16
+ aiosignal==1.3.2
+ alembic==1.15.2
++amqp==5.3.1
+ annotated-types==0.7.0
+ anyio==4.9.0
+ asyncpg==0.30.0
+ attrs==25.3.0
++bcrypt==4.3.0
++billiard==4.2.1
+ black==25.1.0
++celery==5.5.3
+ certifi==2025.1.31
+ click==8.1.8
++click-didyoumean==0.3.1
++click-plugins==1.1.1
++click-repl==0.3.0
+ colorama==0.4.6
+ dnspython==2.7.0
+ email_validator==2.2.0
+ fastapi==0.115.12
++fastapi-cache2==0.2.2
+ fastapi-cli==0.0.7
+ frozenlist==1.6.0
+ greenlet==3.2.0
+@@ -21,7 +29,9 @@
+ httptools==0.6.4
+ httpx==0.28.1
+ idna==3.10
++iniconfig==2.1.0
+ Jinja2==3.1.6
++kombu==5.5.4
+ Mako==1.3.10
+ markdown-it-py==3.0.0
+ MarkupSafe==3.0.2
+@@ -29,26 +39,41 @@
+ multidict==6.4.3
+ mypy_extensions==1.1.0
+ packaging==25.0
++passlib==1.7.4
+ pathspec==0.12.1
++pendulum==3.1.0
++pillow==11.2.1
+ platformdirs==4.3.7
++pluggy==1.6.0
++prompt_toolkit==3.0.51
+ propcache==0.3.1
+ pydantic==2.11.3
+ pydantic-settings==2.9.1
+ pydantic_core==2.33.1
+ Pygments==2.19.1
++PyJWT==2.10.1
++pytest==8.4.1
++pytest-asyncio==1.0.0
++pytest-dotenv==0.5.2
++python-dateutil==2.9.0.post0
+ python-dotenv==1.1.0
+ python-multipart==0.0.20
+ PyYAML==6.0.2
++redis==6.2.0
+ rich==14.0.0
+ rich-toolkit==0.14.1
+ shellingham==1.5.4
++six==1.17.0
+ sniffio==1.3.1
+ SQLAlchemy==2.0.40
+ starlette==0.46.2
+ typer==0.15.2
+ typing-inspection==0.4.0
+ typing_extensions==4.13.2
++tzdata==2025.2
+ uvicorn==0.34.1
++vine==5.1.0
+ watchfiles==1.0.5
++wcwidth==0.2.13
+ websockets==15.0.1
+ yarl==1.20.0
+Index: src/models/hotels.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from sqlalchemy import String\r\nfrom sqlalchemy.orm import Mapped, mapped_column\r\n\r\nfrom src.DB import BaseModel\r\n\r\n\r\nclass HotelsModel(BaseModel):\r\n    __tablename__ = \"hotels\"\r\n\r\n    id: Mapped[int] = mapped_column(primary_key=True)\r\n    title: Mapped[str] = mapped_column(String(100))\r\n    location: Mapped[str]\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/models/hotels.py b/src/models/hotels.py
+--- a/src/models/hotels.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/models/hotels.py	(date 1750896360576)
+@@ -1,10 +1,10 @@
+ from sqlalchemy import String
+ from sqlalchemy.orm import Mapped, mapped_column
+ 
+-from src.DB import BaseModel
++from src.DB import Base
+ 
+ 
+-class HotelsModel(BaseModel):
++class HotelsModel(Base):
+     __tablename__ = "hotels"
+ 
+     id: Mapped[int] = mapped_column(primary_key=True)
+Index: src/migrations/env.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from logging.config import fileConfig\r\n\r\nfrom sqlalchemy import engine_from_config\r\nfrom sqlalchemy import pool\r\n\r\nfrom alembic import context\r\n\r\nfrom src.DB import BaseModel\r\nfrom src.config import settings\r\nfrom src.models.hotels import HotelsModel\r\nfrom src.models.rooms import RoomsModel\r\n\r\n# this is the Alembic Config object, which provides\r\n# access to the values within the .ini file in use.\r\nconfig = context.config\r\n\r\nconfig.set_main_option(\"sqlalchemy.url\", f\"{settings.DB_URL}?async_fallback=True\")\r\n# Interpret the config file for Python logging.\r\n# This line sets up loggers basically.\r\nif config.config_file_name is not None:\r\n    fileConfig(config.config_file_name)\r\n\r\n# add your model's MetaData object here\r\n# for 'autogenerate' support\r\n# from myapp import mymodel\r\n# target_metadata = mymodel.Base.metadata\r\ntarget_metadata = BaseModel.metadata\r\n\r\n\r\n# other values from the config, defined by the needs of env.py,\r\n# can be acquired:\r\n# my_important_option = config.get_main_option(\"my_important_option\")\r\n# ... etc.\r\n\r\n\r\ndef run_migrations_offline() -> None:\r\n    \"\"\"Run migrations in 'offline' mode.\r\n\r\n    This configures the context with just a URL\r\n    and not an Engine, though an Engine is acceptable\r\n    here as well.  By skipping the Engine creation\r\n    we don't even need a DBAPI to be available.\r\n\r\n    Calls to context.execute() here emit the given string to the\r\n    script output.\r\n\r\n    \"\"\"\r\n    url = config.get_main_option(\"sqlalchemy.url\")\r\n    context.configure(\r\n        url=url,\r\n        target_metadata=target_metadata,\r\n        literal_binds=True,\r\n        dialect_opts={\"paramstyle\": \"named\"},\r\n    )\r\n\r\n    with context.begin_transaction():\r\n        context.run_migrations()\r\n\r\n\r\ndef run_migrations_online() -> None:\r\n    \"\"\"Run migrations in 'online' mode.\r\n\r\n    In this scenario we need to create an Engine\r\n    and associate a connection with the context.\r\n\r\n    \"\"\"\r\n    connectable = engine_from_config(\r\n        config.get_section(config.config_ini_section, {}),\r\n        prefix=\"sqlalchemy.\",\r\n        poolclass=pool.NullPool,\r\n    )\r\n\r\n    with connectable.connect() as connection:\r\n        context.configure(\r\n            connection=connection, target_metadata=target_metadata\r\n        )\r\n\r\n        with context.begin_transaction():\r\n            context.run_migrations()\r\n\r\n\r\nif context.is_offline_mode():\r\n    run_migrations_offline()\r\nelse:\r\n    run_migrations_online()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/migrations/env.py b/src/migrations/env.py
+--- a/src/migrations/env.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/migrations/env.py	(date 1750896360583)
+@@ -5,10 +5,9 @@
+ 
+ from alembic import context
+ 
+-from src.DB import BaseModel
++from src.DB import Base
+ from src.config import settings
+-from src.models.hotels import HotelsModel
+-from src.models.rooms import RoomsModel
++from src.models import *
+ 
+ # this is the Alembic Config object, which provides
+ # access to the values within the .ini file in use.
+@@ -24,7 +23,7 @@
+ # for 'autogenerate' support
+ # from myapp import mymodel
+ # target_metadata = mymodel.Base.metadata
+-target_metadata = BaseModel.metadata
++target_metadata = Base.metadata
+ 
+ 
+ # other values from the config, defined by the needs of env.py,
+Index: src/repositories/base.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from sqlalchemy import select, insert, update, delete\r\nfrom pydantic import BaseModel\r\n\r\n\r\nclass BaseRepository:\r\n    model = None\r\n\r\n    def __init__(self, session):\r\n        self.session = session\r\n\r\n    async def get_all(self, *args, **kwargs):\r\n        query = select(self.model)\r\n        result = await self.session.execute(query)\r\n        return result.scalars().all()\r\n\r\n    async def get_one_or_none(self, **filter_by):\r\n        query = select(self.model).filter_by(**filter_by)\r\n        result = await self.session.execute(query)\r\n        return result.scalars().one_or_none()\r\n\r\n    async def add(self, data: BaseModel):\r\n        add_data_stmt = insert(self.model).values(**data.model_dump()).returning(self.model)\r\n        result = await self.session.execute(add_data_stmt)\r\n        return result.scalars().one_or_none()\r\n\r\n    async def edit(self, data: BaseModel, **filter_by) -> None:\r\n        query = update(self.model).filter_by(**filter_by).values(**data.model_dump())\r\n        await self.session.execute(query)\r\n\r\n    async def delete(self, **filter_by) -> None:\r\n        query = delete(self.model).filter_by(**filter_by)\r\n        await self.session.execute(query)\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/base.py b/src/repositories/base.py
+--- a/src/repositories/base.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/repositories/base.py	(date 1750896360585)
+@@ -1,32 +1,53 @@
+-from sqlalchemy import select, insert, update, delete
+ from pydantic import BaseModel
++from sqlalchemy import select, insert, update, delete
++
++from src.repositories.mappers.base import DataMapper
+ 
+ 
+ class BaseRepository:
+     model = None
++    mapper: DataMapper = None
+ 
+     def __init__(self, session):
+         self.session = session
+ 
+-    async def get_all(self, *args, **kwargs):
+-        query = select(self.model)
++    async def get_filtered(self, *filter, **filter_by):
++        query = (
++            select(self.model)
++            .filter(*filter)
++            .filter_by(**filter_by)
++        )
+         result = await self.session.execute(query)
+-        return result.scalars().all()
++        return [self.mapper.map_to_domain_entity(model) for model in result.scalars().all()]
++
++    async def get_all(self, *args, **kwargs):
++        return await self.get_filtered()
+ 
+     async def get_one_or_none(self, **filter_by):
+         query = select(self.model).filter_by(**filter_by)
+         result = await self.session.execute(query)
+-        return result.scalars().one_or_none()
++        model = result.scalars().one_or_none()
++        if model is None:
++            return None
++        return self.mapper.map_to_domain_entity(model)
+ 
+     async def add(self, data: BaseModel):
+         add_data_stmt = insert(self.model).values(**data.model_dump()).returning(self.model)
+         result = await self.session.execute(add_data_stmt)
+-        return result.scalars().one_or_none()
++        model = result.scalars().one_or_none()
++        return self.mapper.map_to_domain_entity(model)
+ 
+-    async def edit(self, data: BaseModel, **filter_by) -> None:
+-        query = update(self.model).filter_by(**filter_by).values(**data.model_dump())
+-        await self.session.execute(query)
++    async def add_bulk(self, data: list[BaseModel]):
++        add_data_stmt = insert(self.model).values([item.model_dump() for item in data])
++        await self.session.execute(add_data_stmt)
++
++    async def edit(self, data: BaseModel, exclude_unset=False, **filter_by) -> None:
++        update_stmt = (
++            update(self.model)
++            .filter_by(**filter_by)
++            .values(**data.model_dump(exclude_unset=exclude_unset)))
++        await self.session.execute(update_stmt)
+ 
+     async def delete(self, **filter_by) -> None:
+-        query = delete(self.model).filter_by(**filter_by)
+-        await self.session.execute(query)
++        delete_stmt = delete(self.model).filter_by(**filter_by)
++        await self.session.execute(delete_stmt)
+Index: src/repositories/hotels.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from sqlalchemy import select\r\n\r\nfrom src.models.hotels import HotelsModel\r\nfrom src.repositories.base import BaseRepository\r\n\r\n\r\nclass HotelsRepository(BaseRepository):\r\n    model = HotelsModel\r\n\r\n    async def get_all(\r\n            self,\r\n            location,\r\n            title,\r\n            limit,\r\n            offset,\r\n    ):\r\n        query = select(HotelsModel)\r\n        if title:\r\n            query = query.filter(HotelsModel.title.ilike(f\"%{title}%\"))\r\n        if location:\r\n            query = query.filter(HotelsModel.location.ilike(f\"%{location}%\"))\r\n        query = (\r\n            query\r\n            .limit(limit)\r\n            .offset(offset)\r\n        )\r\n\r\n        result = await self.session.execute(query)\r\n        return result.scalars().all()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/repositories/hotels.py b/src/repositories/hotels.py
+--- a/src/repositories/hotels.py	(revision 9f9010f20052ccf3f766a287c1f7546fc8efd89c)
++++ b/src/repositories/hotels.py	(date 1750896360595)
+@@ -1,20 +1,35 @@
++from datetime import date
++
+ from sqlalchemy import select
+ 
+ from src.models.hotels import HotelsModel
++from src.models.rooms import RoomsModel
+ from src.repositories.base import BaseRepository
++from src.repositories.mappers.mappers import HotelDataMapper
++from src.repositories.utils import rooms_ids_for_booking
++from src.schemas.hotels import Hotel
+ 
+ 
+ class HotelsRepository(BaseRepository):
+     model = HotelsModel
++    mapper = HotelDataMapper
+ 
+-    async def get_all(
++    async def get_filtered_by_time(
+             self,
++            date_from: date,
++            date_to: date,
+             location,
+             title,
+             limit,
+             offset,
+-    ):
+-        query = select(HotelsModel)
++    ) -> list[Hotel]:
++        rooms_ids_to_get = rooms_ids_for_booking(date_from=date_from, date_to=date_to)
++        hotels_ids = (
++            select(RoomsModel.hotel_id)
++            .select_from(RoomsModel)
++            .filter(RoomsModel.id.in_(rooms_ids_to_get))
++        )
++        query = select(HotelsModel).filter(HotelsModel.id.in_(hotels_ids))
+         if title:
+             query = query.filter(HotelsModel.title.ilike(f"%{title}%"))
+         if location:
+@@ -24,6 +39,5 @@
+             .limit(limit)
+             .offset(offset)
+         )
+-
+         result = await self.session.execute(query)
+-        return result.scalars().all()
++        return [self.mapper.map_to_domain_entity(hotel) for hotel in result.scalars().all()]
+diff --git a/tests/integration_test/hotels/__init__.py b/tests/integration_test/hotels/__init__.py
+new file mode 100644
+diff --git a/tests/integration_test/__init__.py b/tests/integration_test/__init__.py
+new file mode 100644
+diff --git a/tests/unit_tests/__init__.py b/tests/unit_tests/__init__.py
+new file mode 100644
