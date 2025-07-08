@@ -73,7 +73,7 @@ async def test_create_user(setup_database, ac):
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 async def test_authenticated_ac(test_create_user, ac):
     response = await ac.post(
         "/auth/login",
@@ -84,3 +84,4 @@ async def test_authenticated_ac(test_create_user, ac):
     )
     assert response.status_code == 200
     assert ac.cookies["access_token"]
+    yield ac
