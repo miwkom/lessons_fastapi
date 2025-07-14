@@ -1,9 +1,9 @@
 from datetime import date
 
-from sqlalchemy import select, func
+from fastapi import HTTPException
+from sqlalchemy import select
 
 from src.models.bookings import BookingsModel
-from src.models.rooms import RoomsModel
 from src.repositories.base import BaseRepository
 from src.repositories.mappers.mappers import BookingDataMapper
 from src.repositories.utils import rooms_ids_for_booking
@@ -35,4 +35,4 @@ class BookingsRepository(BaseRepository):
             new_booking = await self.add(booking_data)
             return new_booking
         else:
-            raise Exception
+            raise HTTPException(500)
