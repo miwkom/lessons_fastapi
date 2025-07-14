@@ -62,7 +62,7 @@ async def get_bookings(
     return await db.bookings.get_all()
 
 
-@router.get("/bookings/me", summary="Бронирование пользователя")
+@router.get("/me", summary="Бронирование пользователя")
 @cache(expire=60)
 async def get_booking(
         db: DBDep,
@@ -72,4 +72,4 @@ async def get_booking(
         user = await db.users.get_one_or_none(id=user_id)
     except NoResultFound:
         raise HTTPException(status_code=404, detail="Пользователь не авторизирован")
-    return await db.bookings.get_all(user_id=user.id)
+    return await db.bookings.get_filtered(user_id=user.id)
