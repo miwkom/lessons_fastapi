@@ -56,3 +56,6 @@ async def test_register_login_logout_user(
     response_logout = await ac.get("/auth/logout")
     assert response_logout.status_code == status_code
     assert ac.cookies.get("access_token") is None
+
+    response_me = await ac.get("/auth/me")
+    assert response_me.status_code == 401
