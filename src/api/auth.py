@@ -43,7 +43,7 @@ async def login_user(
     except Exception:
         raise HTTPException(status_code=403, detail="Пользователь с таким email не зарегистрирован")
     if not AuthService().verify_password(data.password, user.hashed_password):
-        raise HTTPException(status_code=403, detail="Не правильный email")
+        raise HTTPException(status_code=403, detail="Не правильный пароль")
     access_token = AuthService().create_access_token({"user_id": user.id})
     response.set_cookie("access_token", access_token)
     return {"access_token": access_token}
