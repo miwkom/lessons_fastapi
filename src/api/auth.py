@@ -12,23 +12,26 @@ async def register_user(
         db: DBDep,
         data: UserRequestAdd,
 ):
-    if len(data.password) > 2:
-        hashed_password = AuthService().hash_password(data.password)
-    else:
-        raise HTTPException(status_code=403, detail="Не правильный пароль")
-    if len(data.email) < 1:
-        raise HTTPException(status_code=403, detail="Не правильный email")
-    email_confirmation = await db.users.get_one_or_none(email=data.email)
-    if email_confirmation is None:
-        new_user_data = UserAdd(email=data.email,
-                                hashed_password=hashed_password,
-                                first_name=data.first_name,
-                                last_name=data.last_name,
-                                )
-    else:
-        raise HTTPException(status_code=403, detail="Пользователь с таким email существует")
-    await db.users.add(new_user_data)
-    await db.commit()
+    try:
+        if len(data.password) > 2:
+            hashed_password = AuthService().hash_password(data.password)
+        else:
+            raise HTTPException(status_code=403, detail="Не правильный пароль")
+        if len(data.email) < 1:
+            raise HTTPException(status_code=403, detail="Не правильный email")
+        email_confirmation = await db.users.get_one_or_none(email=data.email)
+        if email_confirmation is None:
+            new_user_data = UserAdd(email=data.email,
+                                    hashed_password=hashed_password,
+                                    first_name=data.first_name,
+                                    last_name=data.last_name,
+                                    )
+        else:
+            raise HTTPException(status_code=403, detail="Пользователь с таким email существует")
+        await db.users.add(new_user_data)
+        await db.commit()
+    except: # noqa: E722
+        raise HTTPException(status_code=403)
     return {"status": "OK"}
 
 

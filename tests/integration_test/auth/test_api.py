@@ -4,13 +4,13 @@ import pytest
 @pytest.mark.parametrize(
     "email, password, status_code",
     [
-        ("user1@mail.com", "user1", 200), #Просто пользователь
-        ("user2@mail.com", "user2", 200), #Просто пользователь
-        ("user1@mail.com", "wrong", 403), #Авторизация с неправильным паролем
-        ("user1@mail.com", "", 403), #Авторизация с пустым паролем
-        ("user3@mail.com", "", 403), #Регистрация с пустым паролем
-        ("", "user3", 422), #Регистрация с пустым email
-        ("", "", 422), #Пустая регистрация
+        ("user1@mail.com", "user1", 200),  # Просто пользователь
+        ("user2@mail.com", "user2", 200),  # Просто пользователь
+        ("user1@mail.com", "wrong", 403),  # Авторизация с неправильным паролем
+        ("user1@mail.com", "", 403),  # Авторизация с пустым паролем
+        ("user3@mail.com", "", 403),  # Регистрация с пустым паролем
+        ("", "user3", 422),  # Регистрация с пустым email
+        ("", "", 422),  # Пустая регистрация
     ])
 async def test_register_login_logout_user(
         email, password, status_code,
