@@ -10,16 +10,17 @@ router = APIRouter(prefix="/bookings", tags=["Бронирование"])
 
 @router.post("", summary="Создать бронирование")
 async def create_booking(
-        db: DBDep,
-        user_id: UserIdDep,
-        booking_data: BookingRequestAdd = Body(openapi_examples={
+    db: DBDep,
+    user_id: UserIdDep,
+    booking_data: BookingRequestAdd = Body(
+        openapi_examples={
             "1": {
                 "summary": "Пример 1",
                 "value": {
                     "room_id": "1",
                     "date_from": "2025-01-25",
                     "date_to": "2025-02-25",
-                }
+                },
             },
             "2": {
                 "summary": "Пример 2",
@@ -27,7 +28,7 @@ async def create_booking(
                     "room_id": "1",
                     "date_from": "2025-03-25",
                     "date_to": "2025-04-25",
-                }
+                },
             },
             "3": {
                 "summary": "Пример 3",
@@ -35,9 +36,10 @@ async def create_booking(
                     "room_id": "1",
                     "date_from": "2025-05-25",
                     "date_to": "2025-06-25",
-                }
-            }
-        }),
+                },
+            },
+        }
+    ),
 ):
     try:
         room = await db.rooms.get_one_or_none(id=booking_data.room_id)
@@ -45,9 +47,7 @@ async def create_booking(
     except NoResultFound:
         raise HTTPException(status_code=404, detail="Комната не найдена")
     _booking_data = BookingAdd(
-        user_id=user_id,
-        price=price,
-        **booking_data.model_dump()
+        user_id=user_id, price=price, **booking_data.model_dump()
     )
     booking = await db.bookings.add_booking(_booking_data, hotel_id=room.hotel_id)
     await db.commit()
@@ -57,7 +57,7 @@ async def create_booking(
 @router.get("/bookings", summary="Список бронирования")
 @cache(expire=60)
 async def get_bookings(
-        db: DBDep,
+    db: DBDep,
 ):
     return await db.bookings.get_all()
 
@@ -65,8 +65,8 @@ async def get_bookings(
 @router.get("/me", summary="Бронирование пользователя")
 @cache(expire=60)
 async def get_booking(
-        db: DBDep,
-        user_id: UserIdDep,
+    db: DBDep,
+    user_id: UserIdDep,
 ):
     try:
         user = await db.users.get_one_or_none(id=user_id)

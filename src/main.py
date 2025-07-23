@@ -24,11 +24,11 @@ async def lifespan(app: FastAPI):
     await redis_connector.connect()
 
     FastAPICache.init(RedisBackend(redis_connector.redis), prefix="fastapi-cache")
-    print('Redis connection')
+    print("Redis connection")
     yield
     # Выключение/Перезапуск
     await redis_connector.disconnect()
-    print('Redis disconnection')
+    print("Redis disconnection")
 
 
 app = FastAPI(lifespan=lifespan)
