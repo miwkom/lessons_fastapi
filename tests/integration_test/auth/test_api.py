@@ -30,7 +30,6 @@ async def test_register_login_logout_user(
         reg_status_code = response_register.status_code
         assert reg_status_code == status_code
         if reg_status_code == 422 or reg_status_code == 403:
-            print(response_register.json()["detail"])
             return
 
     response_login = await ac.post(
@@ -42,7 +41,6 @@ async def test_register_login_logout_user(
     )
     assert response_login.status_code == status_code
     if response_login.status_code == 403:
-        print(response_login.json()["detail"])
         return
     cookie_login = ac.cookies.get("access_token")
     assert cookie_login is not None
