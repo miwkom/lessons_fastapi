@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Response
 
 from src.api.dependencies import UserIdDep, DBDep
+from src.exceptions import DataProcessingErrorsException
 from src.schemas.users import UserRequestAdd, UserAdd, UserLogin
 from src.services.auth import AuthService
 
@@ -12,29 +13,18 @@ async def register_user(
     db: DBDep,
     data: UserRequestAdd,
 ):
+    hashed_password = AuthService().hash_password(data.password)
+    new_user_data = UserAdd(
+        email=data.email,
+        hashed_password=hashed_password,
+        first_name=data.first_name,
+        last_name=data.last_name,
+    )
     try:
-        if len(data.password) > 2:
-            hashed_password = AuthService().hash_password(data.password)
-        else:
-            raise HTTPException(status_code=403, detail="Не правильный пароль")
-        if len(data.email) < 1:
-            raise HTTPException(status_code=403, detail="Не правильный email")
-        email_confirmation = await db.users.get_one_or_none(email=data.email)
-        if email_confirmation is None:
-            new_user_data = UserAdd(
-                email=data.email,
-                hashed_password=hashed_password,
-                first_name=data.first_name,
-                last_name=data.last_name,
-            )
-        else:
-            raise HTTPException(
-                status_code=403, detail="Пользователь с таким email существует"
-            )
         await db.users.add(new_user_data)
-        await db.commit()
-    except:  # noqa: E722
-        raise HTTPException(status_code=403)
+    except DataProcessingErrorsException:
+        raise HTTPException(status_code=409, detail="Пользователь уже существует")
+    await db.commit()
     return {"status": "OK"}
 
 

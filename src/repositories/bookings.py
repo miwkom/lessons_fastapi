@@ -1,8 +1,8 @@
 from datetime import date
-
-from fastapi import HTTPException
+from typing import Sequence
 from sqlalchemy import select
 
+from src.exceptions import AllRoomsAreBookedException
 from src.models.bookings import BookingsModel
 from src.repositories.base import BaseRepository
 from src.repositories.mappers.mappers import BookingDataMapper
@@ -28,10 +28,10 @@ class BookingsRepository(BaseRepository):
             hotel_id=hotel_id,
         )
         rooms_ids_to_book_res = await self.session.execute(rooms_ids_to_get)
-        rooms_ids_to_book: list[int] = rooms_ids_to_book_res.scalars().all()
+        rooms_ids_to_book: Sequence[int] = rooms_ids_to_book_res.scalars().all()
 
         if booking_data.room_id in rooms_ids_to_book:
             new_booking = await self.add(booking_data)
             return new_booking
-        else:
-            raise HTTPException(500)
+
+        raise AllRoomsAreBookedException
