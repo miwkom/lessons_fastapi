@@ -2,7 +2,6 @@ from datetime import date
 
 from sqlalchemy import select
 
-from src.exceptions import DatesAreIncorrectException
 from src.models.hotels import HotelsModel
 from src.models.rooms import RoomsModel
 from src.repositories.base import BaseRepository
@@ -16,16 +15,14 @@ class HotelsRepository(BaseRepository):
     mapper = HotelDataMapper
 
     async def get_filtered_by_time(
-        self,
-        date_from: date,
-        date_to: date,
-        location,
-        title,
-        limit,
-        offset,
+            self,
+            date_from: date,
+            date_to: date,
+            location,
+            title,
+            limit,
+            offset,
     ) -> list[Hotel]:
-        if date_from >= date_to:
-            raise DatesAreIncorrectException
         rooms_ids_to_get = rooms_ids_for_booking(date_from=date_from, date_to=date_to)
         hotels_ids = (
             select(RoomsModel.hotel_id)

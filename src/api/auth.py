@@ -22,9 +22,9 @@ async def register_user(
     )
     try:
         await db.users.add(new_user_data)
+        await db.commit()
     except DataProcessingErrorsException:
         raise HTTPException(status_code=409, detail="Пользователь уже существует")
-    await db.commit()
     return {"status": "OK"}
 
 
