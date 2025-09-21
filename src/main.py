@@ -17,6 +17,10 @@ from src.api.facilities import router as facilities_router
 from src.api.images import router as images_router
 from src.init import redis_connector
 
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,11 +28,10 @@ async def lifespan(app: FastAPI):
     await redis_connector.connect()
 
     FastAPICache.init(RedisBackend(redis_connector.redis), prefix="fastapi-cache")
-    print("Redis connection")
+    logging.info(f"FastAPI Cache initialized")
     yield
     # Выключение/Перезапуск
     await redis_connector.disconnect()
-    print("Redis disconnection")
 
 
 app = FastAPI(lifespan=lifespan)
