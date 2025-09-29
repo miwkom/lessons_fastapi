@@ -1,10 +1,19 @@
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body
 from fastapi_cache.decorator import cache
-from sqlalchemy.exc import NoResultFound
 
 from src.api.dependencies import DBDep, UserIdDep
-from src.exceptions import ObjectNotFoundException, AllRoomsAreBookedException
-from src.schemas.bookings import BookingAdd, BookingRequestAdd
+from src.exceptions import (
+    AllRoomsAreBookedException,
+    RoomNotFoundException,
+    RoomNotFoundHTTPException,
+    AllRoomsAreBookedHTTPException,
+    DataProcessingErrorsException,
+    DataProcessingErrorsHTTPException,
+    UserNotFoundException,
+    UserNotFoundHTTPException,
+)
+from src.schemas.bookings import BookingRequestAdd
+from src.services.bookings import BookingSevices
 
 router = APIRouter(prefix="/bookings", tags=["Бронирование"])
 
@@ -43,18 +52,11 @@ async def create_booking(
     ),
 ):
     try:
-        room = await db.rooms.get_one(id=booking_data.room_id)
-    except ObjectNotFoundException:
-        raise HTTPException(status_code=400, detail="Номер не найден")
-    room_price: int = room.price
-    _booking_data = BookingAdd(
-        user_id=user_id, price=room_price, **booking_data.model_dump()
-    )
-    try:
-        booking = await db.bookings.add_booking(_booking_data, hotel_id=room.hotel_id)
+        booking = await BookingSevices(db).create_booking(user_id, booking_data)
+    except RoomNotFoundException as ex:
+        raise RoomNotFoundHTTPException from ex
     except AllRoomsAreBookedException as ex:
-        raise HTTPException(status_code=409, detail=ex.detail)
-    await db.commit()
+        raise AllRoomsAreBookedHTTPException from ex
     return {"status": "OK", "data": booking}
 
 
@@ -63,7 +65,11 @@ async def create_booking(
 async def get_bookings(
     db: DBDep,
 ):
-    return await db.bookings.get_all()
+    try:
+        bookings = await BookingSevices(db).get_bookings()
+    except DataProcessingErrorsException as ex:
+        raise DataProcessingErrorsHTTPException from ex
+    return bookings
 
 
 @router.get("/me", summary="Бронирование пользователя")
@@ -73,7 +79,9 @@ async def get_booking(
     user_id: UserIdDep,
 ):
     try:
-        user = await db.users.get_one_or_none(id=user_id)
-    except NoResultFound:
-        raise HTTPException(status_code=404, detail="Пользователь не авторизирован")
-    return await db.bookings.get_filtered(user_id=user.id)
+        booking = await BookingSevices(db).get_booking(user_id)
+    except DataProcessingErrorsException as ex:
+        raise DataProcessingErrorsHTTPException from ex
+    except UserNotFoundException as ex:
+        raise UserNotFoundHTTPException from ex
+    return booking

@@ -5,9 +5,18 @@ from fastapi import HTTPException, Response
 from passlib.context import CryptContext
 
 from src.config import settings
+from src.exceptions import (
+    DataProcessingErrorsException,
+    ObjectAlreadyExistsException,
+    ObjectNotFoundException,
+    UserNotFoundException,
+    UnauthorizedException,
+)
+from src.schemas.users import UserRequestAdd, UserAdd, UserLogin
+from src.services.base import BaseService
 
 
-class AuthService:
+class AuthService(BaseService):
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
     def create_access_token(self, data: dict) -> str:
@@ -35,5 +44,40 @@ class AuthService:
         except jwt.exceptions.DecodeError:
             raise HTTPException(status_code=404, detail="Неверный токен")
 
-    def logout_user(self, response: Response):
-        response.delete_cookie("access_token")
+    async def logout_user(self, response: Response):
+        try:
+            response.delete_cookie("access_token")
+        except ObjectNotFoundException as ex:
+            raise UserNotFoundException from ex
+
+    async def register_user(self, data: UserRequestAdd):
+        hashed_password = AuthService().hash_password(data.password)
+        new_user_data = UserAdd(
+            email=data.email,
+            hashed_password=hashed_password,
+            first_name=data.first_name,
+            last_name=data.last_name,
+        )
+        try:
+            await self.db.users.add(new_user_data)
+        except ObjectAlreadyExistsException as ex:
+            raise DataProcessingErrorsException from ex
+        await self.db.commit()
+
+    async def login_user(self, data: UserLogin, response: Response):
+        try:
+            user = await self.db.users.get_user_with_hashed_password(email=data.email)
+        except ObjectNotFoundException as ex:
+            raise UserNotFoundException from ex
+        if not AuthService().verify_password(data.password, user.hashed_password):
+            raise UnauthorizedException
+        access_token = AuthService().create_access_token({"user_id": user.id})
+        response.set_cookie("access_token", access_token)
+        return access_token
+
+    async def get_self(self, user_id):
+        try:
+            user = await self.db.users.get_one(id=user_id)
+        except ObjectNotFoundException as ex:
+            raise UserNotFoundException from ex
+        return user

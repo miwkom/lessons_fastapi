@@ -1,9 +1,16 @@
 from fastapi import APIRouter, Body
 from fastapi_cache.decorator import cache
+from sqlalchemy.sql.coercions import expect
 
 from src.api.dependencies import DBDep
+from src.exceptions import (
+    DataProcessingErrorsException,
+    DataProcessingErrorsHTTPException,
+    FacilitiesNotFoundException,
+    FacilitiesNotFoundHTTPException,
+)
 from src.schemas.facilities import FacilityAdd
-from src.tasks.tasks import test_task
+from src.services.facilities import FacilitiesService
 
 router = APIRouter(prefix="/facilities", tags=["Удобства и услуги"])
 
@@ -11,7 +18,11 @@ router = APIRouter(prefix="/facilities", tags=["Удобства и услуги
 @router.get("", summary="Список удобств и услуг")
 @cache(expire=60)
 async def get_facilities(db: DBDep):
-    return await db.facilities.get_all()
+    try:
+        facilities = await FacilitiesService(db).get_facilities()
+    except DataProcessingErrorsException as ex:
+        raise DataProcessingErrorsHTTPException from ex
+    return facilities
 
 
 @router.post("", summary="Создать удобство или услугу")
@@ -26,16 +37,19 @@ async def create_facility(
         }
     ),
 ):
-    facilities = await db.facilities.add(facilities_data)
-    await db.commit()
-
-    test_task.delay()
-
+    try:
+        facilities = await FacilitiesService(db).create_facility(facilities_data)
+    except DataProcessingErrorsException as ex:
+        raise DataProcessingErrorsHTTPException from ex
     return {"status": "OK", "data": facilities}
 
 
 @router.delete("/{facilities_id}", summary="Удалить удобство или услугу")
 async def delete_facility(db: DBDep, facilities_id: int):
-    await db.facilities.delete(id=facilities_id)
-    await db.commit()
+    try:
+        await FacilitiesService(db).delete_facility(facilities_id)
+    except DataProcessingErrorsException as ex:
+        raise DataProcessingErrorsHTTPException from ex
+    except FacilitiesNotFoundException as ex:
+        raise FacilitiesNotFoundHTTPException from ex
     return {"status": "OK"}

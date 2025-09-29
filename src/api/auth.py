@@ -1,8 +1,15 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Response
 
 from src.api.dependencies import UserIdDep, DBDep
-from src.exceptions import DataProcessingErrorsException
-from src.schemas.users import UserRequestAdd, UserAdd, UserLogin
+from src.exceptions import (
+    DataProcessingErrorsHTTPException,
+    DataProcessingErrorsException,
+    UserNotFoundHTTPException,
+    UserNotFoundException,
+    UnauthorizedHTTPException,
+    UnauthorizedException,
+)
+from src.schemas.users import UserRequestAdd, UserLogin
 from src.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Авторизация и аутентификация"])
@@ -13,18 +20,10 @@ async def register_user(
     db: DBDep,
     data: UserRequestAdd,
 ):
-    hashed_password = AuthService().hash_password(data.password)
-    new_user_data = UserAdd(
-        email=data.email,
-        hashed_password=hashed_password,
-        first_name=data.first_name,
-        last_name=data.last_name,
-    )
     try:
-        await db.users.add(new_user_data)
-        await db.commit()
-    except DataProcessingErrorsException:
-        raise HTTPException(status_code=409, detail="Пользователь уже существует")
+        await AuthService(db).register_user(data)
+    except DataProcessingErrorsException as ex:
+        raise DataProcessingErrorsHTTPException from ex
     return {"status": "OK"}
 
 
@@ -35,15 +34,11 @@ async def login_user(
     response: Response,
 ):
     try:
-        user = await db.users.get_user_with_hashed_password(email=data.email)
-    except Exception:
-        raise HTTPException(
-            status_code=403, detail="Пользователь с таким email не зарегистрирован"
-        )
-    if not AuthService().verify_password(data.password, user.hashed_password):
-        raise HTTPException(status_code=403, detail="Не правильный пароль")
-    access_token = AuthService().create_access_token({"user_id": user.id})
-    response.set_cookie("access_token", access_token)
+        access_token = await AuthService(db).login_user(data, response)
+    except UserNotFoundException as ex:
+        raise UserNotFoundHTTPException from ex
+    except UnauthorizedException as ex:
+        raise UnauthorizedHTTPException from ex
     return {"access_token": access_token}
 
 
@@ -52,7 +47,10 @@ async def get_me(
     db: DBDep,
     user_id: UserIdDep,
 ):
-    user = await db.users.get_one_or_none(id=user_id)
+    try:
+        user = await AuthService(db).get_self(user_id)
+    except UserNotFoundException as ex:
+        raise UserNotFoundHTTPException from ex
     return user
 
 
@@ -60,5 +58,8 @@ async def get_me(
 async def logout(
     response: Response,
 ):
-    AuthService().logout_user(response)
+    try:
+        await AuthService().logout_user(response)
+    except UserNotFoundException as ex:
+        raise UserNotFoundHTTPException from ex
     return {"status": "OK"}

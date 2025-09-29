@@ -19,7 +19,7 @@ from src.utils.db_manager import DBManager
 
 @pytest.fixture(scope="session", autouse=True)
 async def check_test_mode():
-    assert settings.MODE == 'TEST'
+    assert settings.MODE == "TEST"
 
 
 async def get_db_null_pool():
@@ -58,7 +58,9 @@ async def setup_database(check_test_mode):
 
 @pytest.fixture(scope="session")
 async def ac() -> AsyncGenerator[AsyncClient, Any]:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
 
@@ -71,7 +73,7 @@ async def test_create_user(setup_database, ac):
             "password": "123456789",
             "first_name": "cat",
             "last_name": "barsic",
-        }
+        },
     )
 
 
@@ -82,7 +84,7 @@ async def test_authenticated_ac(test_create_user, ac):
         json={
             "email": "cat@mail.com",
             "password": "123456789",
-        }
+        },
     )
     assert response.status_code == 200
     assert ac.cookies["access_token"]

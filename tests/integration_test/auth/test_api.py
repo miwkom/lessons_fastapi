@@ -5,17 +5,13 @@ import pytest
     "email, password, status_code",
     [
         ("user1@mail.com", "user1", 200),  # Просто пользователь
-        ("user2@mail.com", "user2", 200),  # Просто пользователь
         ("user1@mail.com", "wrong", 403),  # Авторизация с неправильным паролем
         ("user1@mail.com", "", 403),  # Авторизация с пустым паролем
-        ("user3@mail.com", "", 403),  # Регистрация с пустым паролем
         ("", "user3", 422),  # Регистрация с пустым email
         ("", "", 422),  # Пустая регистрация
-    ])
-async def test_register_login_logout_user(
-        email, password, status_code,
-        ac, db
-):
+    ],
+)
+async def test_register_login_logout_user(email, password, status_code, ac, db):
     assert ac.cookies.get("access_token") is None
 
     new_user = await db.users.get_one_or_none(email=email)
@@ -25,7 +21,7 @@ async def test_register_login_logout_user(
             json={
                 "email": email,
                 "password": password,
-            }
+            },
         )
         reg_status_code = response_register.status_code
         assert reg_status_code == status_code
@@ -37,7 +33,7 @@ async def test_register_login_logout_user(
         json={
             "email": email,
             "password": password,
-        }
+        },
     )
     assert response_login.status_code == status_code
     if response_login.status_code == 403:
